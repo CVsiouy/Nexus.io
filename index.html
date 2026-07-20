@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Nodus.io — Network Conquest</title>
+  <meta name="description" content="Grow your network. Sever their links. Conquer all." />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; background: #06060f; overflow: hidden; }
+    #app { width: 100vw; height: 100vh; }
+
+    #hud {
+      position: fixed; top: 0; left: 0;
+      width: 100%; height: 100%;
+      pointer-events: none;
+      font-family: 'Inter', sans-serif;
+      color: #e2e8f0;
+      z-index: 10;
+    }
+
+    /* ─── Level Bar ─── */
+    #level-bar {
+      position: absolute; top: 16px; left: 16px;
+      background: rgba(6,6,20,0.88);
+      border: 1px solid rgba(0,191,255,0.25);
+      border-radius: 14px; padding: 14px 18px;
+      min-width: 220px; backdrop-filter: blur(12px);
+      box-shadow: 0 4px 24px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.04);
+    }
+    #level-bar .player-name {
+      font-family:'Orbitron',sans-serif; font-size:11px;
+      color:#00bfff; letter-spacing:3px; margin-bottom:8px; text-transform:uppercase;
+    }
+    #level-bar .level-row { display:flex; align-items:baseline; gap:6px; margin-bottom:8px; }
+    #level-bar .level-num { font-size:26px; font-weight:700; color:#fff; line-height:1; }
+    #level-bar .level-label { font-size:11px; color:rgba(226,232,240,0.4); }
+    #level-bar .spec-badge {
+      font-size:10px; padding:2px 8px; border-radius:20px;
+      background:rgba(124,58,237,0.2); border:1px solid rgba(124,58,237,0.4);
+      color:#a78bfa; margin-left:auto; display:none;
+    }
+    .bar-label { font-size:10px; color:rgba(226,232,240,0.45); margin-bottom:3px; }
+    .bar-bg { width:100%; height:5px; background:rgba(255,255,255,0.08); border-radius:3px; overflow:hidden; margin-bottom:6px; }
+    .bar-fill { height:100%; border-radius:3px; transition:width .4s ease; }
+    #xp-fill { background:linear-gradient(90deg,#0070c8,#7c3aed); }
+    #hp-fill { background:linear-gradient(90deg,#16a34a,#4ade80); }
+    #level-bar .stats-row { display:flex; gap:14px; flex-wrap:wrap; }
+    #level-bar .stat { font-size:11px; color:rgba(226,232,240,0.55); display:flex; align-items:center; gap:4px; }
+    #level-bar .stat strong { color:#e2e8f0; }
+
+    /* ─── Leaderboard ─── */
+    #leaderboard {
+      position: absolute; top: 16px; right: 16px;
+      background: rgba(6,6,20,0.88); border:1px solid rgba(255,255,255,0.07);
+      border-radius:14px; padding:12px 16px; min-width:190px;
+      backdrop-filter:blur(12px);
+      box-shadow: 0 4px 24px rgba(0,0,0,0.5);
+    }
+    #leaderboard h3 {
+      font-family:'Orbitron',sans-serif; font-size:9px;
+      color:rgba(226,232,240,0.35); letter-spacing:3px;
+      text-transform:uppercase; margin-bottom:10px;
+    }
+    #lb-entries { display:flex; flex-direction:column; gap:5px; }
+    .lb-entry {
+      display:flex; align-items:center; gap:8px;
+      font-size:12px; padding:4px 0;
+      border-bottom:1px solid rgba(255,255,255,0.04);
+    }
+    .lb-entry:last-child { border-bottom:none; }
+    .lb-rank { width:16px; font-size:10px; color:rgba(226,232,240,0.3); font-family:'Orbitron',sans-serif; }
+    .lb-dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
+    .lb-name { flex:1; font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .lb-score { font-size:11px; color:rgba(226,232,240,0.5); }
+    .lb-entry.is-player .lb-name { color:#00bfff; font-weight:600; }
+
+    /* ─── Minimap ─── */
+    #minimap-wrap {
+      position:absolute; bottom:16px; right:16px;
+      background:rgba(6,6,20,0.92); border:1px solid rgba(0,191,255,0.15);
+      border-radius:14px; padding:8px;
+      backdrop-filter:blur(12px);
+      box-shadow: 0 4px 24px rgba(0,0,0,0.5);
+    }
+    #minimap-wrap .mm-title {
+      font-family:'Orbitron',sans-serif; font-size:8px;
+      color:rgba(226,232,240,0.3); letter-spacing:2px;
+      text-align:center; margin-bottom:4px;
+    }
+    #minimap { display:block; border-radius:8px; }
+
+    /* ─── Notifications ─── */
+    #notifs {
+      position:absolute; bottom:16px; left:16px;
+      display:flex; flex-direction:column-reverse; gap:6px;
+      align-items:flex-start; max-height:240px;
+    }
+    .notif {
+      background:rgba(6,6,20,0.92); border-radius:10px;
+      padding:8px 14px; font-size:12px; max-width:280px;
+      backdrop-filter:blur(12px);
+      animation:notif-in .25s ease, notif-out .3s ease 3.8s forwards;
+      border-left:3px solid;
+    }
+    .notif.warning { border-color:#f87171; color:#fca5a5; }
+    .notif.success { border-color:#4ade80; color:#86efac; }
+    .notif.info    { border-color:#38bdf8; color:#7dd3fc; }
+    @keyframes notif-in  { from{opacity:0;transform:translateX(-16px)} to{opacity:1;transform:none} }
+    @keyframes notif-out { from{opacity:1} to{opacity:0;transform:translateX(-12px)} }
+
+    /* ─── Unit Info Panel ─── */
+    #unit-panel {
+      position:absolute; bottom:16px; left:50%; transform:translateX(-50%);
+      background:rgba(6,6,20,0.92); border:1px solid rgba(0,191,255,0.15);
+      border-radius:14px; padding:12px 20px; min-width:230px; text-align:center;
+      backdrop-filter:blur(12px); display:none;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.5);
+    }
+    #unit-panel.vis { display:block; }
+    #up-name { font-family:'Orbitron',sans-serif; font-size:11px; color:#00bfff; letter-spacing:1px; margin-bottom:8px; }
+    #up-hp-bg { width:100%; height:4px; background:rgba(255,255,255,0.1); border-radius:2px; overflow:hidden; margin-bottom:6px; }
+    #up-hp-fill { height:100%; background:#4ade80; border-radius:2px; transition:width .3s; }
+    #up-stats { font-size:11px; color:rgba(226,232,240,0.55); }
+
+    /* ─── Specialization Modal ─── */
+    #spec-modal {
+      position:fixed; top:0; left:0; width:100%; height:100%;
+      background:rgba(0,0,0,0.75); backdrop-filter:blur(10px);
+      display:none; align-items:center; justify-content:center;
+      z-index:100; pointer-events:all;
+    }
+    #spec-modal.vis { display:flex; }
+    #spec-card {
+      background:linear-gradient(135deg,#0d0d22 0%,#0a0a18 100%);
+      border:1px solid rgba(0,191,255,0.25); border-radius:20px;
+      padding:36px; max-width:620px; width:90%;
+      box-shadow:0 20px 60px rgba(0,0,0,0.6);
+    }
+    #spec-card h2 {
+      font-family:'Orbitron',sans-serif; font-size:18px; color:#00bfff;
+      letter-spacing:4px; margin-bottom:6px; text-align:center;
+    }
+    #spec-card .sub { font-size:13px; color:rgba(226,232,240,0.5); text-align:center; margin-bottom:28px; }
+    #spec-opts { display:flex; gap:12px; flex-wrap:wrap; }
+    .spec-btn {
+      flex:1; min-width:160px; background:rgba(255,255,255,0.03);
+      border:1px solid rgba(255,255,255,0.1); border-radius:14px;
+      padding:18px 16px; cursor:pointer; pointer-events:all;
+      transition:all .2s ease; text-align:left; color:#e2e8f0;
+    }
+    .spec-btn:hover { transform:translateY(-3px); }
+    .spec-btn.sprawl    { border-color:rgba(34,197,94,.3);  }
+    .spec-btn.sprawl:hover { background:rgba(34,197,94,.08); border-color:rgba(34,197,94,.6); box-shadow:0 0 20px rgba(34,197,94,.15); }
+    .spec-btn.bastion   { border-color:rgba(251,191,36,.3); }
+    .spec-btn.bastion:hover { background:rgba(251,191,36,.08); border-color:rgba(251,191,36,.6); box-shadow:0 0 20px rgba(251,191,36,.15); }
+    .spec-btn.warmonger { border-color:rgba(239,68,68,.3);  }
+    .spec-btn.warmonger:hover { background:rgba(239,68,68,.08); border-color:rgba(239,68,68,.6); box-shadow:0 0 20px rgba(239,68,68,.15); }
+    .spec-btn .si { font-size:28px; margin-bottom:10px; }
+    .spec-btn .sn { font-family:'Orbitron',sans-serif; font-size:11px; letter-spacing:2px; margin-bottom:8px; }
+    .spec-btn.sprawl .sn    { color:#4ade80; }
+    .spec-btn.bastion .sn   { color:#fbbf24; }
+    .spec-btn.warmonger .sn { color:#f87171; }
+    .spec-btn .sd { font-size:11px; color:rgba(226,232,240,0.5); line-height:1.6; }
+
+    /* ─── Intro Screen ─── */
+    #intro {
+      position:fixed; top:0; left:0; width:100%; height:100%;
+      background:rgba(6,6,15,0.97); backdrop-filter:blur(6px);
+      display:flex; flex-direction:column; align-items:center; justify-content:center;
+      z-index:200; pointer-events:all;
+    }
+    #intro h1 {
+      font-family:'Orbitron',sans-serif; font-size:56px; font-weight:900;
+      color:#fff; letter-spacing:8px;
+      text-shadow:0 0 40px rgba(0,191,255,0.8), 0 0 80px rgba(0,191,255,0.3);
+      margin-bottom:4px;
+    }
+    #intro .tag { font-size:13px; color:rgba(226,232,240,0.4); letter-spacing:4px; margin-bottom:40px; }
+    #intro .ctrls {
+      background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08);
+      border-radius:16px; padding:24px 32px; margin-bottom:32px;
+      display:grid; grid-template-columns:1fr 1fr; gap:10px 32px; max-width:500px; width:90%;
+    }
+    #intro .ci { display:flex; align-items:center; gap:10px; font-size:12px; color:rgba(226,232,240,0.65); }
+    #intro .ck {
+      background:rgba(0,191,255,0.1); border:1px solid rgba(0,191,255,0.3);
+      border-radius:5px; padding:3px 8px; font-size:10px; color:#00bfff;
+      font-family:monospace; white-space:nowrap;
+    }
+    #intro .tip {
+      font-size:12px; color:rgba(226,232,240,0.35); max-width:420px;
+      text-align:center; line-height:1.8; margin-bottom:36px;
+    }
+    #start-btn {
+      background:linear-gradient(135deg,#0070c8,#7c3aed);
+      border:none; border-radius:12px; padding:14px 40px;
+      font-family:'Orbitron',sans-serif; font-size:14px; letter-spacing:3px;
+      color:#fff; cursor:pointer; pointer-events:all;
+      box-shadow:0 0 40px rgba(0,112,200,0.4);
+      transition:all .2s ease;
+    }
+    #start-btn:hover { transform:translateY(-2px); box-shadow:0 0 60px rgba(0,112,200,0.6); }
+
+    /* ─── Game Over ─── */
+    #gameover {
+      position:fixed; top:0; left:0; width:100%; height:100%;
+      background:rgba(0,0,0,0.8); backdrop-filter:blur(10px);
+      display:none; align-items:center; justify-content:center;
+      z-index:200; flex-direction:column; gap:16px; pointer-events:all;
+    }
+    #gameover.vis { display:flex; }
+    #gameover h2 { font-family:'Orbitron',sans-serif; font-size:36px; letter-spacing:6px; }
+    #gameover h2.win { color:#4ade80; text-shadow:0 0 40px rgba(74,222,128,0.6); }
+    #gameover h2.lose { color:#f87171; text-shadow:0 0 40px rgba(248,113,113,0.6); }
+    #gameover p { font-size:14px; color:rgba(226,232,240,0.5); }
+    #restart-btn {
+      background:linear-gradient(135deg,#0070c8,#7c3aed);
+      border:none; border-radius:10px; padding:12px 32px;
+      font-family:'Orbitron',sans-serif; font-size:13px; letter-spacing:2px;
+      color:#fff; cursor:pointer; margin-top:8px;
+    }
+  </style>
+</head>
+<body>
+  <div id="app"></div>
+
+  <div id="hud">
+    <div id="level-bar">
+      <div class="player-name">Nodus.io</div>
+      <div class="level-row">
+        <span class="level-num">Lv <span id="hud-lvl">1</span></span>
+        <span class="level-label">BASE</span>
+        <span class="spec-badge" id="hud-spec"></span>
+      </div>
+      <div class="bar-label">XP — <span id="hud-xp">0</span> / <span id="hud-xp-next">50</span></div>
+      <div class="bar-bg"><div class="bar-fill" id="xp-fill" style="width:0%"></div></div>
+      <div class="bar-label">HP — <span id="hud-hp">1000</span> / <span id="hud-maxhp">1000</span></div>
+      <div class="bar-bg"><div class="bar-fill" id="hp-fill" style="width:100%"></div></div>
+      <div class="stats-row">
+        <span class="stat">🔗 <strong id="hud-nodes">0</strong> nodes</span>
+        <span class="stat">⚔️ <strong id="hud-soldiers">0</strong> units</span>
+      </div>
+    </div>
+
+    <div id="leaderboard">
+      <h3>Leaderboard</h3>
+      <div id="lb-entries"></div>
+    </div>
+
+    <div id="minimap-wrap">
+      <div class="mm-title">MAP</div>
+      <canvas id="minimap" width="160" height="160"></canvas>
+    </div>
+
+    <div id="notifs"></div>
+
+    <div id="unit-panel">
+      <div id="up-name">GRUNT ×1</div>
+      <div id="up-hp-bg"><div id="up-hp-fill" style="width:100%"></div></div>
+      <div id="up-stats">HP: 20/20 · DMG: 4 · SPD: Normal</div>
+    </div>
+  </div>
+
+  <!-- Specialization Modal -->
+  <div id="spec-modal">
+    <div id="spec-card">
+      <h2>CHOOSE YOUR PATH</h2>
+      <p class="sub">Level 15 reached — permanently specialize your empire</p>
+      <div id="spec-opts">
+        <button class="spec-btn sprawl" data-spec="sprawl">
+          <div class="si">🌿</div>
+          <div class="sn">SPRAWL</div>
+          <div class="sd">Claim nodes 40% faster · +1 link slot · +25% XP from eatables</div>
+        </button>
+        <button class="spec-btn bastion" data-spec="bastion">
+          <div class="si">🛡️</div>
+          <div class="sn">BASTION</div>
+          <div class="sd">+40% Node & Link HP · +50% auto-defense radius · +30% Base HP</div>
+        </button>
+        <button class="spec-btn warmonger" data-spec="warmonger">
+          <div class="si">⚔️</div>
+          <div class="sn">WARMONGER</div>
+          <div class="sd">+25% soldier damage · +30% production rate · +15% attack speed</div>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Game Over -->
+  <div id="gameover">
+    <h2 id="go-title">VICTORY</h2>
+    <p id="go-sub">You conquered the network.</p>
+    <button id="restart-btn">▶ PLAY AGAIN</button>
+  </div>
+
+  <!-- Intro -->
+  <div id="intro">
+    <h1>NODUS.IO</h1>
+    <div class="tag">NETWORK CONQUEST</div>
+    <div class="ctrls">
+      <div class="ci"><span class="ck">Click</span> Select soldier</div>
+      <div class="ci"><span class="ck">Drag</span> Box select</div>
+      <div class="ci"><span class="ck">L-Click</span> Move / Claim</div>
+      <div class="ci"><span class="ck">R-Click</span> Attack-move</div>
+      <div class="ci"><span class="ck">Click enemy</span> Attack</div>
+      <div class="ci"><span class="ck">Scroll</span> Zoom</div>
+      <div class="ci"><span class="ck">WASD</span> Pan camera</div>
+      <div class="ci"><span class="ck">Space</span> Snap to Base</div>
+    </div>
+    <div class="tip">
+      Grow your network of <strong style="color:#00bfff">Nodes</strong> connected by glowing <strong style="color:#00bfff">Links</strong>.<br>
+      Cut an enemy's trunk link and their entire branch goes dark instantly.<br>
+      Destroy their Base to eliminate them. Last network standing wins.
+    </div>
+    <button id="start-btn">▶ BEGIN CONQUEST</button>
+  </div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
