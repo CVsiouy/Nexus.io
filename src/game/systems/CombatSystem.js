@@ -29,6 +29,7 @@ export class CombatSystem {
   _autoDefense(state) {
     for (const [, sol] of state.soldiers) {
       if (sol.selected || sol.order.kind !== 'idle' || sol.hp <= 0) continue;
+      if (sol.type === 'harvester') continue; // non-combat: never auto-engages
       const player = state.players.get(sol.ownerId);
       if (!player?.alive) continue;
 
@@ -114,12 +115,21 @@ export class CombatSystem {
     const player = state.players.get(attacker.ownerId);
     if (player?.base.specialization === 'warmonger') dmg *= 1.25;
 
+    // Attack skill-point buff (+10% per point)
+    dmg *= 1 + (player?.buffs?.atk ?? 0) * 0.10;
+
     // Saboteur vs structures
     const isStructure = state.links.has(target.id) || state.nodeSites.has(target.id) || state.bases.has(target.id);
     if (attacker.type === 'saboteur' && isStructure) dmg *= 2;
 
     // Sentinel defense bonus (when defending = auto-defending)
     if (attacker.type === 'sentinel' && !attacker.selected) dmg *= 1.5;
+
+    // Defender's Defense skill-point buff reduces incoming damage (soldier targets).
+    if (state.soldiers.has(target.id)) {
+      const tp = state.players.get(target.ownerId);
+      dmg /= 1 + (tp?.buffs?.def ?? 0) * 0.10;
+    }
 
     target.hp = Math.max(0, target.hp - dmg);
     if (target.lastDamagedAt !== undefined) target.lastDamagedAt = now;

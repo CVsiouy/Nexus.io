@@ -2,7 +2,7 @@ import { uid } from '../utils/helpers.js';
 import {
   BASE_HP, NODE_HP, LINK_HP,
   LINK_RANGE, LINK_CAPACITY, VISION_RADIUS,
-  SPAWN_PROTECT, SOLDIER_DEFS, EATABLE_DEFS,
+  SPAWN_PROTECT, SOLDIER_DEFS, EATABLE_DEFS, STARTING_XP,
 } from './constants.js';
 
 // ─── Base ─────────────────────────────────────────────────────────────────────
@@ -14,7 +14,8 @@ export class Base {
     this.hp              = BASE_HP;
     this.maxHp           = BASE_HP;
     this.level           = 1;
-    this.xp              = 0;
+    this.xp              = STARTING_XP; // spendable XP balance (spent to queue soldiers)
+    this.xpEarned        = 0;           // lifetime XP earned (drives leveling; never spent)
     this.linkCapacity    = LINK_CAPACITY;
     this.linkRange       = LINK_RANGE;
     this.visionRadius    = VISION_RADIUS;
@@ -24,6 +25,16 @@ export class Base {
     this.spawnProtected  = true;
     this.protectTimer    = SPAWN_PROTECT;
     this.unlocked        = new Set(['grunt']); // available soldier types
+
+    // Spawn queue: player clicks a unit N times to enqueue N of it. The base
+    // produces them one at a time (each unit's own spawnMs), decrementing the
+    // count. FIFO across types so a mixed queue builds in click order.
+    // Shape: [{ type, count }] — bots leave this empty and auto-spawn instead.
+    this.spawnQueue      = [];
+    this.buildTimer      = 0;   // ms accumulated toward the current unit's spawnMs
+
+    // Skill points earned on level-up, spent on soldier buffs (see player.buffs).
+    this.skillPoints     = 0;
   }
 }
 
@@ -74,6 +85,15 @@ export class Soldier {
     this.selected   = false;
     this.atkCd      = 0;   // ms until next attack
     this.facing     = Math.random() * Math.PI * 2;
+    this.pop        = def.pop ?? 1;   // population budget this unit consumes
+
+    // Stationing: a stationed soldier holds guardPos, auto-defends, and returns
+    // to the post after a fight. Freshly-spawned soldiers are NOT stationed
+    // (they idle near the base as free reserves the Rally button can grab).
+    this.stationed  = false;
+    this.guardPos   = null;
+
+    this.outOfSupplyMs = 0; // time spent away from the network (drives attrition)
   }
 }
 

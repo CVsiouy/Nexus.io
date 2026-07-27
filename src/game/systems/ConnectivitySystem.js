@@ -14,9 +14,14 @@ export class ConnectivitySystem {
   update(state) {
     const now = state.time;
 
+    // Build a per-owner adjacency map in ONE pass over all links, so each
+    // player's BFS is O(V+E) instead of re-scanning every link per node.
+    // (This is the game's hottest loop at scale — dense maps have 1000+ links.)
+    const adjByOwner = this._buildAdjacency(state);
+
     for (const [playerId, player] of state.players) {
       if (!player.alive) continue;
-      this._check(state, playerId, now);
+      this._check(state, playerId, now, adjByOwner.get(playerId));
     }
 
     // Orphan timer expiry
@@ -29,35 +34,52 @@ export class ConnectivitySystem {
     }
   }
 
+  /** Map<ownerId, Map<nodeId, neighborId[]>> for all live links. */
+  _buildAdjacency(state) {
+    const adj = new Map();
+    for (const [, link] of state.links) {
+      if (link.hp <= 0) continue;
+      let owner = adj.get(link.ownerId);
+      if (!owner) { owner = new Map(); adj.set(link.ownerId, owner); }
+      _addEdge(owner, link.fromId, link.toId);
+      _addEdge(owner, link.toId, link.fromId);
+    }
+    return adj;
+  }
+
   /** Call this immediately whenever a link's HP hits 0. */
   onLinkDestroyed(state, link) {
     state.links.delete(link.id);
     const player = state.players.get(link.ownerId);
     if (player && player.alive) {
-      this._check(state, link.ownerId, state.time);
+      // Rebuild just this owner's adjacency for the immediate re-check.
+      const owner = new Map();
+      for (const [, l] of state.links) {
+        if (l.ownerId !== link.ownerId || l.hp <= 0) continue;
+        _addEdge(owner, l.fromId, l.toId);
+        _addEdge(owner, l.toId, l.fromId);
+      }
+      this._check(state, link.ownerId, state.time, owner);
     }
   }
 
-  _check(state, playerId, now) {
+  _check(state, playerId, now, adj) {
     const player = state.players.get(playerId);
     if (!player?.base) return;
 
-    // BFS from base
+    // BFS from base over the prebuilt adjacency list. Index-pointer queue
+    // avoids the O(n) cost of Array.shift() on every dequeue.
     const reachable = new Set();
     reachable.add(player.base.id);
     const queue = [player.base.id];
+    let head = 0;
 
-    while (queue.length > 0) {
-      const cur = queue.shift();
-      for (const [, link] of state.links) {
-        if (link.ownerId !== playerId) continue;
-        if (link.hp <= 0) continue;
-
-        let next = null;
-        if      (link.fromId === cur && !reachable.has(link.toId))   next = link.toId;
-        else if (link.toId   === cur && !reachable.has(link.fromId)) next = link.fromId;
-
-        if (next) { reachable.add(next); queue.push(next); }
+    while (head < queue.length) {
+      const cur = queue[head++];
+      const neighbors = adj?.get(cur);
+      if (!neighbors) continue;
+      for (const next of neighbors) {
+        if (!reachable.has(next)) { reachable.add(next); queue.push(next); }
       }
     }
 
@@ -70,7 +92,7 @@ export class ConnectivitySystem {
           node.status    = 'orphaned';
           node.orphanedAt = now;
           if (playerId === state.playerId)
-            state.notify('⚠️ Node orphaned! Reconnect within 12s', 'warning', playerId);
+            state.notify('⚠️ Node orphaned! Reconnect within 30s', 'warning', playerId);
         }
       } else if (node.status === 'orphaned') {
         if (reachable.has(node.id)) {
@@ -102,4 +124,11 @@ export class ConnectivitySystem {
     if (prevOwner === state.playerId)
       state.notify('💀 Node lost — reclaim it!', 'warning', prevOwner);
   }
+}
+
+/** Push `b` onto the neighbor list of `a` in an adjacency Map. */
+function _addEdge(adj, a, b) {
+  let list = adj.get(a);
+  if (!list) { list = []; adj.set(a, list); }
+  list.push(b);
 }

@@ -1,4 +1,4 @@
-import { LEVELS, WORLD_SIZE } from '../constants.js';
+import { LEVELS, WORLD_SIZE, SOLDIER_DEFS } from '../constants.js';
 import { hexToCSS } from '../../utils/helpers.js';
 
 /**
@@ -36,36 +36,121 @@ export class HUDRenderer {
     this._upHpFill  = document.getElementById('up-hp-fill');
     this._upStats   = document.getElementById('up-stats');
 
+    this._buildBtns = [...document.querySelectorAll('#build-panel .unit-btn')];
+    this._bpXp      = document.getElementById('bp-xp');
+    this._bpPop     = document.getElementById('bp-pop');
+
+    this._skPanel   = document.getElementById('skill-panel');
+    this._skPts     = document.getElementById('sk-pts');
+    this._skRows    = [...document.querySelectorAll('#skill-panel .sk-row')];
+    this._skVals    = {
+      atk: document.getElementById('sk-atk'),
+      def: document.getElementById('sk-def'),
+      spd: document.getElementById('sk-spd'),
+    };
+
     this._prevNotifIds = new Set();
     this._prevLbHash   = '';
+    this._prevBuildHash = '';
+    this._prevSkillHash = '';
   }
 
-  update(state) {
+  update(state, camera) {
     const player = state.players.get(state.playerId);
     if (!player) return;
+    this._camRef = camera;
 
     this._updateLevelBar(state, player);
     this._updateLeaderboard(state);
     this._updateMinimap(state);
     this._updateNotifications(state);
     this._updateUnitPanel(state);
+    this._updateBuildPanel(state, player);
+    this._updateSkillPanel(state, player);
+  }
+
+  // ── Build Panel ────────────────────────────────────────────────────────────
+  _updateBuildPanel(state, player) {
+    const base = player.base;
+
+    // Per-type queued totals (sum across queue entries of the same type).
+    const queued = {};
+    for (const e of base.spawnQueue) queued[e.type] = (queued[e.type] || 0) + e.count;
+
+    const xp   = Math.floor(base.xp);
+    const pop  = state.soldierPop(player.id);
+    const cap  = state.popCap(player);
+
+    // Cheap hash so we only touch the DOM when something changed.
+    const hash = base.level + '|' + [...base.unlocked].sort().join(',') + '|' +
+                 xp + '|' + pop + '/' + cap + '|' +
+                 this._buildBtns.map(b => queued[b.dataset.unit] || 0).join(',');
+    if (hash === this._prevBuildHash) return;
+    this._prevBuildHash = hash;
+
+    if (this._bpXp)  this._bpXp.textContent  = xp;
+    if (this._bpPop) this._bpPop.textContent = `${pop}/${cap}`;
+
+    for (const btn of this._buildBtns) {
+      const unit   = btn.dataset.unit;
+      const def    = SOLDIER_DEFS[unit];
+      const reqLv  = parseInt(btn.dataset.lv, 10);
+      const locked = !base.unlocked.has(unit);
+      const count  = queued[unit] || 0;
+
+      // Can't-afford = not enough XP for one, or no population room for one.
+      const cantAfford = !locked && (xp < def.xpCost || pop + def.pop > cap);
+
+      btn.classList.toggle('locked', locked);
+      btn.classList.toggle('active', count > 0 && !locked);
+      btn.classList.toggle('cant-afford', cantAfford && count === 0);
+
+      const sub = btn.querySelector('.u-sub');
+      if (sub) sub.textContent = locked ? `🔒 Lv ${reqLv}` : `Lv ${reqLv}`;
+
+      const badge = btn.querySelector('.u-badge');
+      if (badge) badge.textContent = count > 0 ? String(count) : '';
+    }
+  }
+
+  // ── Skill / Buffs Panel ──────────────────────────────────────────────────
+  _updateSkillPanel(state, player) {
+    const base  = player.base;
+    const buffs = player.buffs;
+    const pts   = base.skillPoints;
+
+    const hash = `${pts}|${buffs.atk},${buffs.def},${buffs.spd}`;
+    if (hash === this._prevSkillHash) return;
+    this._prevSkillHash = hash;
+
+    if (this._skPts) this._skPts.textContent = pts;
+    if (this._skPanel) this._skPanel.classList.toggle('has-pts', pts > 0);
+
+    this._skVals.atk.textContent = `+${buffs.atk * 10}%`;
+    this._skVals.def.textContent = `+${buffs.def * 10}%`;
+    this._skVals.spd.textContent = `+${buffs.spd * 10}%`;
+
+    // Rows become clickable (spendable) only when points are available.
+    for (const row of this._skRows) row.classList.toggle('spendable', pts > 0);
   }
 
   // ── Level Bar ────────────────────────────────────────────────────────────
   _updateLevelBar(state, player) {
     const base   = player.base;
     const level  = base.level;
-    const xp     = Math.floor(base.xp);
+    // Level progress uses LIFETIME earned XP (spending on soldiers must not
+    // shrink the level bar). Spendable XP is shown separately in the build bar.
+    const xpEarned = Math.floor(base.xpEarned);
     const nextLv = LEVELS.find(l => l.lv === level + 1);
-    const xpNext = nextLv ? nextLv.xp : xp;
+    const xpNext = nextLv ? nextLv.xp : xpEarned;
     const prevLv = LEVELS.find(l => l.lv === level);
     const xpPrev = prevLv ? prevLv.xp : 0;
     const xpPct  = xpNext > xpPrev
-      ? Math.min(100, ((xp - xpPrev) / (xpNext - xpPrev)) * 100)
+      ? Math.min(100, ((xpEarned - xpPrev) / (xpNext - xpPrev)) * 100)
       : 100;
 
     this._lvl.textContent   = level;
-    this._xpEl.textContent  = xp;
+    this._xpEl.textContent  = xpEarned;
     this._xpNext.textContent = xpNext;
     this._xpBar.style.width = xpPct + '%';
 
@@ -114,65 +199,80 @@ export class HUDRenderer {
     `).join('');
   }
 
-  // ── Minimap ───────────────────────────────────────────────────────────────
+  // ── Minimap (YOUR stuff only) ──────────────────────────────────────────────
+  // Shows only the player's base, own nodes/links, and formations — the main
+  // viewport is limited, so this is the player's orientation aid for THEIR
+  // network. Click base/formation dots to switch the active view.
   _updateMinimap(state) {
     const ctx = this._mmCtx;
     const W   = this._mmCanvas.width;
     const H   = this._mmCanvas.height;
     const scale = W / WORLD_SIZE;
+    const pid = state.playerId;
+    const me  = state.players.get(pid);
 
     ctx.fillStyle = '#08081a';
     ctx.fillRect(0, 0, W, H);
+    if (!me) return;
+    const col = hexToCSS(me.color);
 
-    // Node sites (unclaimed) — tiny dots
-    ctx.fillStyle = 'rgba(100,100,150,0.3)';
-    for (const [, node] of state.nodeSites) {
-      if (node.status !== 'unclaimed') continue;
-      ctx.fillRect(node.position.x * scale - 0.5, node.position.y * scale - 0.5, 1, 1);
-    }
-
-    // Links
+    // Own links
+    ctx.strokeStyle = col + 'aa'; ctx.lineWidth = 1;
     for (const [, link] of state.links) {
-      if (link.hp <= 0) continue;
-      const from   = state.resolve(link.fromId);
-      const to     = state.resolve(link.toId);
+      if (link.hp <= 0 || link.ownerId !== pid) continue;
+      const from = state.resolve(link.fromId), to = state.resolve(link.toId);
       if (!from || !to) continue;
-      const player = state.players.get(link.ownerId);
-      if (!player) continue;
-      ctx.strokeStyle = hexToCSS(player.color) + '99';
-      ctx.lineWidth   = 1;
       ctx.beginPath();
       ctx.moveTo(from.position.x * scale, from.position.y * scale);
       ctx.lineTo(to.position.x   * scale, to.position.y   * scale);
       ctx.stroke();
     }
 
-    // Claimed nodes
+    // Own claimed nodes
+    ctx.fillStyle = col + 'cc';
     for (const [, node] of state.nodeSites) {
-      if (node.status !== 'claimed') continue;
-      const player = state.players.get(node.ownerId);
-      if (!player) continue;
-      ctx.fillStyle = hexToCSS(player.color) + 'cc';
+      if (node.status !== 'claimed' || node.ownerId !== pid) continue;
       ctx.beginPath();
       ctx.arc(node.position.x * scale, node.position.y * scale, 2, 0, Math.PI * 2);
       ctx.fill();
     }
 
-    // Bases
-    for (const [, player] of state.players) {
-      if (!player.alive) continue;
-      const { x, y } = player.base.position;
-      ctx.fillStyle   = hexToCSS(player.color);
-      ctx.strokeStyle = '#fff';
-      ctx.lineWidth   = 0.5;
-      ctx.beginPath();
-      ctx.arc(x * scale, y * scale, player.id === state.playerId ? 4 : 3, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.stroke();
+    // Formations (small squares); active one ringed white
+    if (state.formations) {
+      for (const [, f] of state.formations) {
+        if (f.ownerId !== pid || f.memberIds.size === 0) continue;
+        const fx = f.center.x * scale, fy = f.center.y * scale;
+        ctx.fillStyle = col;
+        ctx.fillRect(fx - 3, fy - 3, 6, 6);
+        if (f.id === state.activeFormationId) {
+          ctx.strokeStyle = '#fff'; ctx.lineWidth = 1;
+          ctx.strokeRect(fx - 4, fy - 4, 8, 8);
+        }
+      }
     }
 
-    // Viewport indicator
-    // (skipped for simplicity — minimap is small enough to show full map)
+    // Base — bigger dot; red ping ring if recently attacked
+    const bx = me.base.position.x * scale, by = me.base.position.y * scale;
+    const attacked = this._baseHpPrev !== undefined && me.base.hp < this._baseHpPrev - 0.5;
+    this._baseHpPrev = me.base.hp;
+    if (attacked) this._basePingUntil = state.time + 1500;
+    if (this._basePingUntil && state.time < this._basePingUntil) {
+      const p = (Math.sin(state.time / 90) * 0.5 + 0.5);
+      ctx.strokeStyle = `rgba(255,60,60,${0.4 + 0.5 * p})`;
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(bx, by, 7 + p * 4, 0, Math.PI * 2); ctx.stroke();
+    }
+    ctx.fillStyle = col; ctx.strokeStyle = '#fff'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.arc(bx, by, 5, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+
+    // Highlight where the viewport currently is (a hollow box).
+    const cam = this._camRef;
+    if (cam) {
+      const halfW = (cam.width  / 2 / cam.zoom) * scale;
+      const halfH = (cam.height / 2 / cam.zoom) * scale;
+      ctx.strokeStyle = 'rgba(255,255,255,0.5)'; ctx.lineWidth = 1;
+      ctx.strokeRect(cam.x * scale - halfW, cam.y * scale - halfH, halfW * 2, halfH * 2);
+    }
   }
 
   // ── Notifications ─────────────────────────────────────────────────────────
