@@ -1,336 +1,358 @@
 import * as PIXI from 'pixi.js';
-import { WORLD_SIZE, EATABLE_DEFS, SOLDIER_DEFS, ORPHAN_GRACE } from '../constants.js';
-import { hexToCSS } from '../../utils/helpers.js';
+import { WORLD_SIZE, SOLDIER_DEFS, TURRET_DEFS, WALL_CELL_SIZE, EATABLE_DEFS, MINE_NODE_RADIUS } from '../constants.js';
+import { cellPositions } from '../walls.js';
 
-const GEAR_TEETH  = 8;
-const DOT_SPACING = 80;
+const GEAR_TEETH = 8;
+const GRID_SIZE  = 50;
+
+// ── Light palette (diep.io style) ────────────────────────────────────────────
+const BG_COLOR   = 0xf4f4f4;
+const GRID_COLOR = 0xd8d8d8;
 
 /**
- * GameRenderer
- * ─────────────
- * Manages all PixiJS drawing. Uses separate Graphics layers for each category.
- * Cleared and redrawn each frame (simple approach, works fine for this scale).
+ * GameRenderer — draws the world under a tight, non-roaming camera.
+ * Layers: grid → bases → turrets → boss → soldiers → projectiles → fx.
+ * There is no fog overlay; reduced visibility comes purely from the zoomed-in,
+ * focus-locked camera (see Game loop + InputSystem).
  */
 export class GameRenderer {
   constructor(app) {
     this._app = app;
-
-    // World container — everything in world space goes here
     this.worldContainer = new PIXI.Container();
     app.stage.addChild(this.worldContainer);
 
-    // Layers (in draw order — lower = drawn first = behind)
-    this._bg      = this._layer(); // static dot background
-    this._sites   = this._layer(); // unclaimed node sites
-    this._links   = this._layer(); // links (glow)
-    this._nodes   = this._layer(); // claimed nodes
-    this._bases   = this._layer(); // bases
-    this._eat     = this._layer(); // eatables
-    this._boss    = this._layer(); // boss
-    this._units   = this._layer(); // soldiers
-    this._fx      = this._layer(); // effects: selection, claiming progress, orphan ring
-    this._box     = this._layer(); // selection box (in screen space)
+    this._bg     = this._layer(); // static grid
+    this._ranges = this._layer(); // defend rings
+    this._center = this._layer(); // centre eatables + wildlings
+    this._bases  = this._layer();
+    this._walls  = this._layer(); // defensive wall cells
+    this._turr   = this._layer();
+    this._boss   = this._layer();
+    this._units  = this._layer();
+    this._proj   = this._layer();
+    this._fx     = this._layer();
 
-    // Box selection is in SCREEN space
-    app.stage.addChild(this._box);
-
-    // Draw static bg once
     this._drawBackground();
-
-    // Particle effects pool
     this._particles = [];
   }
 
-  // ── Main render call ──────────────────────────────────────────────────────
-
-  render(state, camera, inputSys) {
+  render(state, camera) {
     this._applyCamera(camera);
+    const t = state.time / 1000;
 
-    const t = state.time / 1000; // seconds for animations
-
-    this._sites.clear();
-    this._links.clear();
-    this._nodes.clear();
+    this._ranges.clear();
+    this._center.clear();
     this._bases.clear();
-    this._eat.clear();
+    this._walls.clear();
+    this._turr.clear();
     this._boss.clear();
     this._units.clear();
+    this._proj.clear();
     this._fx.clear();
-    this._box.clear();
 
-    this._drawNodeSites(state, t);
-    this._drawLinks(state, camera);
-    this._drawNodes(state, t);
-    this._drawBases(state, t);
+    this._drawDefendRings(state);
     this._drawEatables(state, t);
+    this._drawWildlings(state, t);
+    this._drawMineNodes(state, t);
+    this._drawBases(state, t);
+    this._drawWalls(state);
+    this._drawTurrets(state);
     this._drawBoss(state, t);
-    this._drawSoldiers(state, t);
-    this._drawEffects(state, t, inputSys);
-    this._drawBoxSelect(inputSys);
-
-    // Particles
-    this._updateParticles(t);
+    this._drawSoldiers(state);
+    this._drawProjectiles(state);
+    this._drawGroupMarkers(state);
+    this._updateParticles();
   }
 
   addParticle(x, y, color, count = 6) {
     for (let i = 0; i < count; i++) {
       const angle = Math.random() * Math.PI * 2;
-      const speed = 30 + Math.random() * 60;
+      const speed = 50 + Math.random() * 80;
       this._particles.push({
         x, y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed,
-        color, life: 1, size: 3 + Math.random() * 4,
+        color, life: 1, size: 4 + Math.random() * 4,
       });
     }
   }
 
   // ── Camera ────────────────────────────────────────────────────────────────
-
-  _applyCamera(camera) {
-    const wc = this.worldContainer;
-    wc.position.set(
-      camera.width  / 2 - camera.x * camera.zoom,
-      camera.height / 2 - camera.y * camera.zoom
+  _applyCamera(cam) {
+    this.worldContainer.position.set(
+      cam.width  / 2 - cam.x * cam.zoom,
+      cam.height / 2 - cam.y * cam.zoom,
     );
-    wc.scale.set(camera.zoom);
+    this.worldContainer.scale.set(cam.zoom);
   }
 
-  // ── Dot background (drawn once) ────────────────────────────────────────────
-
+  // ── Background ──────────────────────────────────────────────────────────────
   _drawBackground() {
     const g = this._bg;
     const W = WORLD_SIZE;
-    g.beginFill(0x06060f, 1);
+    g.beginFill(BG_COLOR, 1);
     g.drawRect(0, 0, W, W);
     g.endFill();
-
-    // Subtle dot grid
-    for (let x = DOT_SPACING; x < W; x += DOT_SPACING) {
-      for (let y = DOT_SPACING; y < W; y += DOT_SPACING) {
-        g.beginFill(0x1a1a35, 0.6);
-        g.drawCircle(x, y, 1);
-        g.endFill();
-      }
-    }
+    g.lineStyle(1, GRID_COLOR, 1);
+    for (let y = 0; y <= W; y += GRID_SIZE) { g.moveTo(0, y); g.lineTo(W, y); }
+    for (let x = 0; x <= W; x += GRID_SIZE) { g.moveTo(x, 0); g.lineTo(x, W); }
+    g.lineStyle(4, 0xaaaaaa, 1);
+    g.drawRect(0, 0, W, W);
   }
 
-  // ── Node Sites ────────────────────────────────────────────────────────────
-
-  _drawNodeSites(state, t) {
-    const g = this._sites;
-    const now = state.time;
-
-    for (const [, node] of state.nodeSites) {
-      if (node.status === 'claimed') continue; // drawn in _drawNodes
-
-      const { x, y } = node.position;
-
-      if (node.status === 'orphaned') {
-        // Pulsing warning ring
-        const elapsed = now - (node.orphanedAt || now);
-        const urgency = elapsed / ORPHAN_GRACE;
-        const pulse   = Math.sin(t * 6 + urgency * 10) * 0.5 + 0.5;
-        const player  = state.players.get(node.ownerId);
-        const color   = player?.color ?? 0xffffff;
-
-        g.lineStyle(1.5, 0xff4444, 0.8 * pulse);
-        g.drawCircle(x, y, 10 + pulse * 4);
-        g.lineStyle(0);
-        g.beginFill(color, 0.4 + pulse * 0.3);
-        g.drawCircle(x, y, 5);
-        g.endFill();
-        continue;
-      }
-
-      if (node.status === 'neutral') {
-        // Neutral — slightly more visible than unclaimed
-        g.beginFill(0xaaaacc, 0.25);
-        g.drawCircle(x, y, 4);
-        g.endFill();
-        continue;
-      }
-
-      // Unclaimed — pale gray dots (Obsidian reference)
-      g.beginFill(0x666688, 0.18);
-      g.drawCircle(x, y, 3);
-      g.endFill();
-    }
-  }
-
-  // ── Links ──────────────────────────────────────────────────────────────────
-
-  _drawLinks(state, camera) {
-    const g = this._links;
-
-    for (const [, link] of state.links) {
-      if (link.hp <= 0) continue;
-
-      const from = state.resolve(link.fromId);
-      const to   = state.resolve(link.toId);
-      if (!from || !to) continue;
-
-      const player = state.players.get(link.ownerId);
-      const color  = player?.color ?? 0xffffff;
-      const hpRatio = link.hp / link.maxHp;
-
-      const x1 = from.position.x, y1 = from.position.y;
-      const x2 = to.position.x,   y2 = to.position.y;
-
-      // Three-pass glow
-      g.lineStyle(10, color, 0.06);
-      g.moveTo(x1, y1); g.lineTo(x2, y2);
-
-      g.lineStyle(4, color, 0.2 * hpRatio);
-      g.moveTo(x1, y1); g.lineTo(x2, y2);
-
-      g.lineStyle(1.5, color, 0.9 * hpRatio);
-      g.moveTo(x1, y1); g.lineTo(x2, y2);
-    }
-  }
-
-  // ── Claimed Nodes ──────────────────────────────────────────────────────────
-
-  _drawNodes(state, t) {
-    const g  = this._nodes;
-
-    for (const [, node] of state.nodeSites) {
-      if (node.status !== 'claimed') continue;
-      const player = state.players.get(node.ownerId);
-      if (!player) continue;
-      const color  = player.color;
-      const { x, y } = node.position;
-
-      const hpRatio  = node.hp / node.maxHp;
-
-      // Glow ring
-      g.lineStyle(6, color, 0.12);
-      g.drawCircle(x, y, 14);
-      g.lineStyle(2, color, 0.5);
-      g.drawCircle(x, y, 10);
-      g.lineStyle(0);
-
-      // Fill
-      g.beginFill(color, 0.85);
-      g.drawCircle(x, y, 7);
-      g.endFill();
-
-      // HP indicator (thin arc) - simplified as opacity
-      if (hpRatio < 0.8) {
-        g.lineStyle(2, 0xff4444, 0.8);
-        g.drawCircle(x, y, 10);
-        g.lineStyle(0);
-      }
-
-      // Reinforced indicator
-      if (node.reinforced) {
-        g.lineStyle(2, color, 1);
-        g.drawCircle(x, y, 13);
-        g.lineStyle(0);
-      }
+  // ── Defend ring for the player's defending squads ───────────────────────────
+  // (Turret range rings intentionally not drawn.)
+  _drawDefendRings(state) {
+    const g = this._ranges;
+    for (const grp of state.groupsOf(state.playerId)) {
+      if (grp.status !== 'defending') continue;
+      g.lineStyle(1.5, 0x16a34a, 0.22);
+      g.drawCircle(grp.anchor.x, grp.anchor.y, 84);
     }
   }
 
   // ── Bases ──────────────────────────────────────────────────────────────────
-
   _drawBases(state, t) {
     const g = this._bases;
-
     for (const [, player] of state.players) {
       if (!player.alive) continue;
-      const base  = player.base;
+      const base = player.base;
       const color = player.color;
+      const border = _darken(color, 0.5);
       const { x, y } = base.position;
-      const rot   = base.rotation;
-      const hpR   = base.hp / base.maxHp;
+      const hpR = base.hp / base.maxHp;
 
-      // Big outer glow
-      g.lineStyle(20, color, 0.06);
-      g.drawCircle(x, y, 50);
       g.lineStyle(8, color, 0.12);
-      g.drawCircle(x, y, 42);
+      g.drawCircle(x, y, 52);
 
-      // Spawn protection ring
       if (base.spawnProtected) {
-        const pulse = Math.sin(t * 4) * 0.3 + 0.7;
-        g.lineStyle(2, 0xffffff, 0.4 * pulse);
-        g.drawCircle(x, y, 55);
+        const pulse = Math.sin(t * 3.5) * 0.3 + 0.7;
+        g.lineStyle(2.5, 0xffffff, 0.55 * pulse);
+        g.drawCircle(x, y, 60);
         g.lineStyle(0);
       }
 
-      // Gear shape (rotating)
-      this._drawGear(g, x, y, rot, color, base.level);
+      this._drawGear(g, x, y, base.rotation, color, border, base.level);
 
-      // HP ring
-      g.lineStyle(3, hpR > 0.5 ? 0x4ade80 : hpR > 0.25 ? 0xfbbf24 : 0xf87171, 0.9);
-      g.arc(x, y, 44, -Math.PI / 2, -Math.PI / 2 + hpR * Math.PI * 2);
+      const hpCol = hpR > 0.55 ? 0x3bce6e : hpR > 0.28 ? 0xf5a623 : 0xf03030;
+      g.lineStyle(3.5, hpCol, 0.95);
+      g.arc(x, y, 48, -Math.PI / 2, -Math.PI / 2 + hpR * Math.PI * 2);
       g.lineStyle(0);
 
-      // Player indicator (dot above)
       if (player.id === state.playerId) {
-        const bob = Math.sin(t * 2) * 3;
-        g.beginFill(0xffffff, 0.9);
-        g.drawPolygon([x, y - 56 + bob, x - 5, y - 62 + bob, x + 5, y - 62 + bob]);
+        const bob = Math.sin(t * 2.4) * 4;
+        g.beginFill(0xffffff, 0.95);
+        g.lineStyle(2, 0x555555, 0.7);
+        g.drawPolygon([x, y - 64 + bob, x - 6, y - 73 + bob, x + 6, y - 73 + bob]);
+        g.lineStyle(0);
         g.endFill();
       }
     }
   }
 
-  _drawGear(g, cx, cy, rot, color, level) {
-    const teeth   = GEAR_TEETH;
-    const innerR  = 20;
-    const outerR  = 30 + Math.min(level - 1, 9) * 1.5;
-    const pts     = [];
-
+  _drawGear(g, cx, cy, rot, color, border, level) {
+    const teeth = GEAR_TEETH;
+    const innerR = 22;
+    const outerR = 32 + Math.min(level - 1, 9) * 1.5;
+    const pts = [];
     for (let i = 0; i < teeth * 2; i++) {
       const a = (i / (teeth * 2)) * Math.PI * 2 + rot;
       const r = i % 2 === 0 ? outerR : innerR;
       pts.push(cx + Math.cos(a) * r, cy + Math.sin(a) * r);
     }
-
-    g.lineStyle(2, color, 0.9);
-    g.beginFill(color, 0.25);
+    g.lineStyle(3, border, 1);
+    g.beginFill(color, 1);
     g.drawPolygon(pts);
     g.endFill();
-
-    // Inner circle
-    g.beginFill(color, 0.6);
-    g.drawCircle(cx, cy, innerR * 0.5);
+    g.lineStyle(2.5, border, 1);
+    g.beginFill(_lighten(color, 0.35), 1);
+    g.drawCircle(cx, cy, innerR * 0.55);
     g.endFill();
+    g.lineStyle(0);
   }
 
-  // ── Eatables ───────────────────────────────────────────────────────────────
+  // ── Defensive walls ──────────────────────────────────────────────────────────
+  // Hex cells joined by thick connector bars (no gaps) + a small hex accent on
+  // each join. A destroyed cell leaves a real gap. Each cell shows its own HP arc.
+  _drawWalls(state) {
+    const g = this._walls;
+    const R = WALL_CELL_SIZE;
+    for (const [, player] of state.players) {
+      if (!player.alive) continue;
+      const base = player.base;
+      const color = player.color;
+      const border = _darken(color, 0.55);
+      for (const layer of base.walls) {
+        if (!layer.cells.length) continue;
+        const cells = cellPositions(base, layer);   // [{x,y,angle,cell}]
+        const bySlot = new Map();
+        for (const cp of cells) bySlot.set(cp.cell.slot, cp);
 
-  _drawEatables(state, t) {
-    const g = this._eat;
+        // 1. Connector bars between ADJACENT present slots → joined, but slimmer pipes.
+        g.lineStyle(R * 0.8, border, 1);
+        for (const cp of cells) {
+          const nb = bySlot.get((cp.cell.slot + 1) % layer.maxCells);
+          if (!nb) continue;                        // missing neighbour = a real gap
+          g.moveTo(cp.x, cp.y); g.lineTo(nb.x, nb.y);
+        }
+        g.lineStyle(0);
 
-    for (const [, eat] of state.eatables) {
-      const def   = EATABLE_DEFS[eat.type];
-      const { x, y } = eat.position;
-      const pulse = Math.sin(t * 1.5 + eat.pulse) * 0.15 + 1;
-      const sz    = def.sz * pulse;
-      const color = def.color;
+        // 2. Hex cells + per-cell HP arc.
+        for (const cp of cells) {
+          const hpR = cp.cell.hp / cp.cell.maxHp;
+          g.lineStyle(2.5, border, 1);
+          g.beginFill(color, 0.55 + 0.45 * hpR);
+          this._poly(g, cp.x, cp.y, 6, R, cp.angle);
+          g.endFill();
+          g.lineStyle(0);
+          if (hpR < 0.99) {
+            g.lineStyle(2.5, hpR > 0.5 ? 0x3bce6e : 0xf03030, 0.95);
+            g.arc(cp.x, cp.y, R + 3, -Math.PI / 2, -Math.PI / 2 + hpR * Math.PI * 2);
+            g.lineStyle(0);
+          }
+        }
 
-      g.beginFill(color, 0.9);
-      g.lineStyle(1.5, color, 0.5);
-
-      switch (def.shape) {
-        case 'square':
-          g.drawRect(x - sz, y - sz, sz * 2, sz * 2);
-          break;
-        case 'triangle':
-          g.drawPolygon([x, y - sz * 1.2, x - sz, y + sz * 0.7, x + sz, y + sz * 0.7]);
-          break;
-        case 'star':
-          this._drawStar(g, x, y, sz * 1.5, sz * 0.65);
-          break;
+        // 3. Small hex accent centred on each connector.
+        for (const cp of cells) {
+          const nb = bySlot.get((cp.cell.slot + 1) % layer.maxCells);
+          if (!nb) continue;
+          const mx = (cp.x + nb.x) / 2, my = (cp.y + nb.y) / 2;
+          g.lineStyle(2, border, 1);
+          g.beginFill(_lighten(color, 0.15), 1);
+          this._poly(g, mx, my, 6, R * 0.55, cp.angle);
+          g.endFill();
+          g.lineStyle(0);
+        }
       }
+    }
+  }
+
+  // ── Centre eatables (destructible XP shapes) ─────────────────────────────────
+  _drawEatables(state, t) {
+    const g = this._center;
+    for (const [, ea] of state.eatables) {
+      const def = EATABLE_DEFS[ea.type];
+      if (!def) continue;
+      const { x, y } = ea.position;
+      const pulse = Math.sin(t * 1.8 + ea.pulse) * 0.06 + 1;
+      const sz = def.sz * pulse;
+      const hpR = ea.hp / ea.maxHp;
+      g.lineStyle(2.5, _darken(def.color, 0.45), 1);
+      g.beginFill(def.color, 0.5 + 0.5 * hpR);
+      const sides = def.shape === 'triangle' ? 3 : def.shape === 'pentagon' ? 5 : 4;
+      this._poly(g, x, y, sides, sz, ea.rot);
       g.endFill();
       g.lineStyle(0);
+    }
+  }
 
-      // Glow
-      g.lineStyle(4, color, 0.1);
-      g.drawCircle(x, y, sz + 4);
+  // ── Centre wildlings (neutral roaming units) ─────────────────────────────────
+  _drawWildlings(state, t) {
+    const g = this._center;
+    for (const [, w] of state.wildlings) {
+      const { x, y } = w.position;
+      const hpR = w.hp / w.maxHp;
+      g.lineStyle(3, 0x2e1065, 1);
+      g.beginFill(0x7c3aed, 1);
+      this._drawStar(g, x, y, 20, 9);
+      g.endFill();
+      g.lineStyle(0);
+      g.beginFill(0x1e1b4b, 0.9);
+      g.drawCircle(x, y, 6);
+      g.endFill();
+      if (hpR < 1) {
+        const bw = 40;
+        g.beginFill(0xcccccc, 0.85);
+        g.drawRoundedRect(x - bw / 2, y - 28, bw, 4, 2);
+        g.endFill();
+        g.beginFill(0x8b5cf6, 1);
+        g.drawRoundedRect(x - bw / 2, y - 28, bw * hpR, 4, 2);
+        g.endFill();
+      }
+    }
+  }
+
+  // ── Mining nodes (Mining mode) ───────────────────────────────────────────────
+  _drawMineNodes(state, t) {
+    const g = this._center;
+    for (const [, node] of state.mineNodes) {
+      const { x, y } = node.position;
+      const owner = node.ownerId ? state.players.get(node.ownerId) : null;
+      const color = owner ? owner.color : 0x9aa5b1; // neutral grey
+      const border = _darken(color, 0.5);
+      const rot = node.rot + t * 0.25;
+
+      g.lineStyle(3, border, 1);
+      g.beginFill(color, owner ? 0.9 : 0.5);
+      this._poly(g, x, y, 6, MINE_NODE_RADIUS, rot);       // hex "cog" body
+      g.endFill();
+      g.lineStyle(0);
+      g.beginFill(0xf5c518, 0.95);                          // gold core
+      g.drawCircle(x, y, MINE_NODE_RADIUS * 0.34);
+      g.endFill();
+
+      if (node.captureProg > 0 && node.capturingBy) {       // capture progress ring
+        const cp = state.players.get(node.capturingBy);
+        g.lineStyle(3, cp ? cp.color : 0xffffff, 0.95);
+        g.arc(x, y, MINE_NODE_RADIUS + 5, -Math.PI / 2, -Math.PI / 2 + node.captureProg * Math.PI * 2);
+        g.lineStyle(0);
+      }
+    }
+  }
+
+  /** Draw a regular n-gon (flat helper used by walls + eatables). */
+  _poly(g, cx, cy, n, r, rot = 0) {
+    const pts = [];
+    for (let i = 0; i < n; i++) {
+      const a = rot + i * (Math.PI * 2 / n);
+      pts.push(cx + Math.cos(a) * r, cy + Math.sin(a) * r);
+    }
+    g.drawPolygon(pts);
+  }
+
+  // ── Turrets ──────────────────────────────────────────────────────────────────
+  _drawTurrets(state) {
+    const g = this._turr;
+    for (const [, tr] of state.turrets) {
+      const def = TURRET_DEFS[tr.type];
+      const { x, y } = tr.position;
+      // Barrel
+      const bl = tr.type === 'missile' ? 20 : 16;
+      g.lineStyle(tr.type === 'missile' ? 6 : 4, _darken(def.color, 0.2), 1);
+      g.moveTo(x, y);
+      g.lineTo(x + Math.cos(tr.aimFacing) * bl, y + Math.sin(tr.aimFacing) * bl);
+      // Housing
+      g.lineStyle(2, 0x1a2a40, 1);
+      g.beginFill(def.color, 1);
+      g.drawCircle(x, y, tr.type === 'missile' ? 9 : 7);
+      g.endFill();
       g.lineStyle(0);
     }
+  }
+
+  // ── Boss ───────────────────────────────────────────────────────────────────
+  _drawBoss(state, t) {
+    if (!state.boss) return;
+    const g = this._boss;
+    const b = state.boss;
+    const { x, y } = b.position;
+    const sz = 30;
+    const hpR = b.hp / b.maxHp;
+    const pulse = Math.sin(t * 3.5) * 0.15 + 1;
+
+    g.lineStyle(3, 0xcc8800, 0.6);
+    g.drawCircle(x, y, sz * 2.2 * pulse);
+    g.lineStyle(4, 0x886600, 1);
+    g.beginFill(0xd4a017, 1);
+    this._drawStar(g, x, y, sz * 1.5, sz * 0.7);
+    g.endFill();
+    g.lineStyle(0);
+
+    const bw = 70;
+    g.beginFill(0xcccccc, 1);
+    g.drawRoundedRect(x - bw / 2, y - sz - 22, bw, 8, 4);
+    g.endFill();
+    g.beginFill(0xd4a017, 1);
+    g.drawRoundedRect(x - bw / 2, y - sz - 22, bw * hpR, 8, 4);
+    g.endFill();
   }
 
   _drawStar(g, cx, cy, outerR, innerR) {
@@ -343,166 +365,147 @@ export class GameRenderer {
     g.drawPolygon(pts);
   }
 
-  // ── Boss ───────────────────────────────────────────────────────────────────
-
-  _drawBoss(state, t) {
-    if (!state.boss) return;
-    const g  = this._boss;
-    const b  = state.boss;
-    const { x, y } = b.position;
-    const rot = b.rotation;
-    const sz  = 28;
-    const hpR = b.hp / b.maxHp;
-
-    // Pulsing glow
-    const pulse = Math.sin(t * 3) * 0.4 + 0.6;
-    g.lineStyle(16, 0xffd700, 0.15 * pulse);
-    g.drawCircle(x, y, sz + 14);
-    g.lineStyle(6, 0xffd700, 0.3);
-    g.drawCircle(x, y, sz + 4);
-    g.lineStyle(0);
-
-    // Spiked cube
-    this._drawStar(g, x, y, sz * 1.6, sz * 0.8);
-    g.beginFill(0xffd700, 0.9);
-    g.drawRect(x - sz * 0.7, y - sz * 0.7, sz * 1.4, sz * 1.4);
-    g.endFill();
-
-    // HP bar
-    const bw = 60;
-    g.beginFill(0x333333, 0.8);
-    g.drawRect(x - bw / 2, y - sz - 18, bw, 6);
-    g.endFill();
-    g.beginFill(0xffd700, 0.9);
-    g.drawRect(x - bw / 2, y - sz - 18, bw * hpR, 6);
-    g.endFill();
-  }
-
   // ── Soldiers ───────────────────────────────────────────────────────────────
-
-  _drawSoldiers(state, t) {
+  // Owner colour identifies the network; each type has a distinct silhouette.
+  // The Saboteur is the one exception — a black body with an owner-coloured outline.
+  _drawSoldiers(state) {
     const g = this._units;
-
     for (const [, sol] of state.soldiers) {
       if (sol.hp <= 0) continue;
-      const def    = SOLDIER_DEFS[sol.type];
       const player = state.players.get(sol.ownerId);
       if (!player) continue;
-      const color  = player.color;
+
       const { x, y } = sol.position;
       const facing = sol.facing;
+      const sizes = { grunt: 7, sentinel: 10, saboteur: 5, vanguard: 11 };
+      const sz = sizes[sol.type] ?? 7;
+      const fill   = sol.type === 'saboteur' ? 0x1a1a1a : player.color;
+      const border = sol.type === 'saboteur' ? player.color : _darken(player.color, 0.5);
 
-      // Type-specific size
-      const sizes = { grunt: 6, harvester: 5, sentinel: 8, saboteur: 5, vanguard: 9 };
-      const sz    = sizes[sol.type] ?? 6;
-
-      // Glow for selected
-      if (sol.selected) {
-        g.lineStyle(3, 0xffffff, 0.6);
+      // Selection ring if this soldier's group is selected (player only).
+      const grp = state.groups.get(sol.groupId);
+      if (grp && grp.selected && sol.ownerId === state.playerId) {
+        g.lineStyle(2, 0x3399ff, 0.8);
         g.drawCircle(x, y, sz + 6);
         g.lineStyle(0);
       }
 
-      // Triangle body (pointing in facing direction)
-      const a1 = facing;
-      const a2 = facing + 2.4;
-      const a3 = facing - 2.4;
-      const back = sz * 0.7;
-      g.lineStyle(1, color, 0.8);
-      g.beginFill(def.color ?? color, 0.9);
-      g.drawPolygon([
-        x + Math.cos(a1) * sz,   y + Math.sin(a1) * sz,
-        x + Math.cos(a2) * back, y + Math.sin(a2) * back,
-        x + Math.cos(a3) * back, y + Math.sin(a3) * back,
-      ]);
+      g.lineStyle(2.5, border, 1);
+      g.beginFill(fill, 1);
+      switch (sol.type) {
+        case 'sentinel': {
+          const s = sz;
+          g.drawRoundedRect(x - s, y - s, s * 2, s * 2, 3);
+          break;
+        }
+        case 'saboteur':
+          g.drawPolygon([x, y - sz, x + sz, y, x, y + sz, x - sz, y]);
+          break;
+        case 'vanguard': {
+          const pts = [];
+          for (let i = 0; i < 6; i++) {
+            const a = facing + i * Math.PI / 3;
+            pts.push(x + Math.cos(a) * sz, y + Math.sin(a) * sz);
+          }
+          g.drawPolygon(pts);
+          break;
+        }
+        default: {
+          // Grunt = triangle (barrel-tank) pointing where it faces.
+          const a1 = facing, a2 = facing + 2.5, a3 = facing - 2.5;
+          const back = sz * 0.75;
+          g.drawPolygon([
+            x + Math.cos(a1) * sz,   y + Math.sin(a1) * sz,
+            x + Math.cos(a2) * back, y + Math.sin(a2) * back,
+            x + Math.cos(a3) * back, y + Math.sin(a3) * back,
+          ]);
+        }
+      }
       g.endFill();
       g.lineStyle(0);
 
-      // HP dot (only if damaged)
+      // Inner highlight (skip on the dark saboteur so it stays clearly black).
+      if (sol.type !== 'saboteur') {
+        g.beginFill(0xffffff, 0.18);
+        g.drawCircle(x, y, sz * 0.35);
+        g.endFill();
+      }
+
       const hpR = sol.hp / sol.maxHp;
-      if (hpR < 0.9) {
-        g.beginFill(hpR > 0.5 ? 0x4ade80 : 0xf87171, 1);
-        g.drawCircle(x, y - sz - 3, 2.5);
+      if (hpR < 0.95) {
+        const bw = sz * 2.2;
+        g.beginFill(0xcccccc, 0.85);
+        g.drawRoundedRect(x - bw / 2, y + sz + 3, bw, 4, 2);
+        g.endFill();
+        const hpCol = hpR > 0.5 ? 0x3bce6e : 0xf03030;
+        g.beginFill(hpCol, 1);
+        g.drawRoundedRect(x - bw / 2, y + sz + 3, bw * hpR, 4, 2);
         g.endFill();
       }
     }
   }
 
-  // ── Effects (selection ring, claim progress, orphan timers) ────────────────
+  // ── Projectiles ──────────────────────────────────────────────────────────────
+  _drawProjectiles(state) {
+    const g = this._proj;
+    for (const [, p] of state.projectiles) {
+      const r = p.splash > 0 ? 5 : 3;
+      g.beginFill(p.color, 1);
+      g.drawCircle(p.position.x, p.position.y, r);
+      g.endFill();
+    }
+  }
 
-  _drawEffects(state, t, inputSys) {
+  // ── Group markers (attack target line for the selected squad) ────────────────
+  _drawGroupMarkers(state) {
     const g = this._fx;
-
-    // Claim progress arcs
-    for (const [, node] of state.nodeSites) {
-      if (!node.claimerSoldierId || node.claimProgress <= 0) continue;
-      const player = state.players.get(state.soldiers.get(node.claimerSoldierId)?.ownerId);
-      const color  = player?.color ?? 0xffffff;
-      const { x, y } = node.position;
-      const angle  = node.claimProgress * Math.PI * 2;
-
-      g.lineStyle(3, color, 0.9);
-      g.arc(x, y, 15, -Math.PI / 2, -Math.PI / 2 + angle);
-      g.lineStyle(0);
-
-      // Channeling pulse ring
-      const pulse = Math.sin(t * 6) * 0.4 + 0.6;
-      g.lineStyle(1.5, color, 0.4 * pulse);
-      g.drawCircle(x, y, 18 + pulse * 3);
-      g.lineStyle(0);
-    }
-
-    // Orphan timer rings
-    for (const [, node] of state.nodeSites) {
-      if (node.status !== 'orphaned' || node.ownerId !== state.playerId) continue;
-      const elapsed = state.time - (node.orphanedAt || 0);
-      const ratio   = 1 - elapsed / 12000;
-      const { x, y } = node.position;
-      g.lineStyle(2.5, 0xff4444, 0.9);
-      g.arc(x, y, 18, -Math.PI / 2, -Math.PI / 2 + ratio * Math.PI * 2);
-      g.lineStyle(0);
-    }
+    const sel = state.groupsOf(state.playerId).find(gr => gr.selected);
+    if (!sel) return;
+    // A small crosshair at the squad's anchor/target.
+    const { x, y } = sel.anchor;
+    const col = sel.status === 'attacking' ? 0xef4444 : sel.status === 'defending' ? 0x16a34a : 0x3399ff;
+    g.lineStyle(1.5, col, 0.7);
+    g.drawCircle(x, y, 10);
+    g.moveTo(x - 14, y); g.lineTo(x + 14, y);
+    g.moveTo(x, y - 14); g.lineTo(x, y + 14);
+    g.lineStyle(0);
   }
 
-  // ── Box Selection ──────────────────────────────────────────────────────────
-
-  _drawBoxSelect(inputSys) {
-    if (!inputSys?.isBoxing) return;
-    const rect = inputSys.getBoxRect();
-    if (!rect) return;
-    const g = this._box;
-    g.lineStyle(1.5, 0x00bfff, 0.8);
-    g.beginFill(0x00bfff, 0.06);
-    g.drawRect(rect.x, rect.y, rect.w, rect.h);
-    g.endFill();
-  }
-
-  // ── Particles ─────────────────────────────────────────────────────────────
-
-  _updateParticles(t) {
-    // Handled via PixiJS Graphics in fx layer — lightweight
+  // ── Particles ────────────────────────────────────────────────────────────────
+  _updateParticles() {
     const alive = [];
     for (const p of this._particles) {
-      p.x  += p.vx * 0.016;
-      p.y  += p.vy * 0.016;
-      p.vy += 20 * 0.016;
-      p.life -= 0.035;
+      p.x += p.vx * 0.016;
+      p.y += p.vy * 0.016;
+      p.vy += 30 * 0.016;
+      p.life -= 0.03;
       if (p.life > 0) alive.push(p);
     }
     this._particles = alive;
-    // Draw in fx layer
     for (const p of this._particles) {
-      this._fx.beginFill(p.color, p.life * 0.8);
+      this._fx.beginFill(p.color, p.life * 0.85);
       this._fx.drawCircle(p.x, p.y, p.size * p.life);
       this._fx.endFill();
     }
   }
-
-  // ── Helpers ───────────────────────────────────────────────────────────────
 
   _layer() {
     const g = new PIXI.Graphics();
     this.worldContainer.addChild(g);
     return g;
   }
+}
+
+// ── Color utilities ──────────────────────────────────────────────────────────
+function _darken(hex, t) {
+  const r = ((hex >> 16) & 0xff) * (1 - t) | 0;
+  const g = ((hex >> 8)  & 0xff) * (1 - t) | 0;
+  const b = (hex         & 0xff) * (1 - t) | 0;
+  return (r << 16) | (g << 8) | b;
+}
+function _lighten(hex, t) {
+  const r = ((hex >> 16) & 0xff) + (0xff - ((hex >> 16) & 0xff)) * t | 0;
+  const g = ((hex >> 8)  & 0xff) + (0xff - ((hex >> 8)  & 0xff)) * t | 0;
+  const b = (hex         & 0xff) + (0xff - (hex         & 0xff)) * t | 0;
+  return (r << 16) | (g << 8) | b;
 }

@@ -1,218 +1,116 @@
-import { dist2 } from '../../utils/helpers.js';
-import { Soldier, Link } from '../entities.js';
+import { Soldier, Turret } from '../entities.js';
 import {
-  SPAWN_INTERVAL, CLAIM_TIME, CLAIM_RANGE, HARVEST_RANGE,
-  EATABLE_TARGET, EATABLE_SPAWN_MS, WORLD_SIZE,
+  SOLDIER_DEFS, TURRET_DEFS, MAX_TURRETS_PER_BASE,
 } from '../constants.js';
-import { spawnEatable } from '../World.js';
+import { addSoldierToNearestGroup } from './GroupSystem.js';
+import { addWallCell } from '../walls.js';
 
 /**
  * ProductionSystem
  * ────────────────
- * • Spawns soldiers at Bases on a timer
- * • Moves all soldiers toward their ordered position/target
- * • Handles node claiming (channeling logic)
- * • Handles eatable harvesting on contact
- * • Periodically respawns eatables
+ * • Spends the shared gold pool to build soldiers (into the nearest group) and
+ *   turrets (mounted on the base ring), working through each base's queues.
+ * • Bots auto-queue via the AISystem; here we just drain the queues.
+ * • Runs spawn-protection countdown.
  */
 export class ProductionSystem {
   update(state, dt, dtMs) {
-    this._spawnSoldiers(state, dtMs);
-    this._moveSoldiers(state, dt, dtMs);
-    this._updateClaiming(state, dtMs);
-    this._updateEatableRespawn(state, dtMs);
+    for (const [, player] of state.players) {
+      if (!player.alive) continue;
+      this._buildSoldiers(state, player, dtMs); // soldier queue …
+      this._buildWalls(state, player, dtMs);    // … and wall queue run in PARALLEL
+    }
     this._updateSpawnProtect(state, dtMs);
   }
 
-  // ── Soldier Spawning ──────────────────────────────────────────────────────
-  _spawnSoldiers(state, dtMs) {
-    for (const [, player] of state.players) {
-      if (!player.alive) continue;
-      const base = player.base;
-      const interval = this._spawnInterval(player);
+  // ── Soldier production (own queue + timer) ──────────────────────────────────
+  _buildSoldiers(state, player, dtMs) {
+    const base = player.base;
+    const q    = base.soldierQueue;
+    if (!q.length) { base.soldierBuildTimer = 0; return; }
 
-      base.spawnTimer -= dtMs;
-      if (base.spawnTimer > 0) continue;
-      base.spawnTimer = interval;
+    const head = q[0];
+    const def  = SOLDIER_DEFS[head.type];
+    if (!def || !base.unlocked.has(head.type)) { q.shift(); return; }
 
-      // Population cap = 6 + level*3 (per player)
-      const cap = 6 + base.level * 3;
-      if (state.soldierCount(player.id) >= cap) continue;
+    const speedMul = base.specialization === 'warmonger' ? 0.7 : 1;
+    base.soldierBuildTimer += dtMs;
+    if (base.soldierBuildTimer < def.spawnMs * speedMul) return;
 
-      // Spawn position: ring around base
-      const angle = Math.random() * Math.PI * 2;
-      const r     = 35 + Math.random() * 20;
-      const x     = base.position.x + Math.cos(angle) * r;
-      const y     = base.position.y + Math.sin(angle) * r;
+    if (base.gold < def.cost) return;                                       // can't afford
+    if (state.soldierPop(player.id) + def.pop > state.popCap(player)) return; // no pop room
 
-      // Bots might spawn harvesters/sentinels when unlocked
-      let type = 'grunt';
-      if (player.isBot && base.level >= 3 && Math.random() < 0.2) type = 'harvester';
-      if (player.isBot && base.level >= 8 && Math.random() < 0.15) type = 'sentinel';
+    base.soldierBuildTimer = 0;
+    base.gold -= def.cost;
+    const sol = this._emitSoldier(state, player, head.type);
+    addSoldierToNearestGroup(state, sol);
 
-      const sol = new Soldier(player.id, type, x, y);
-      state.soldiers.set(sol.id, sol);
-    }
+    head.count--;
+    if (head.count <= 0) q.shift();
   }
 
-  _spawnInterval(player) {
-    let interval = SPAWN_INTERVAL;
-    if (player.base.specialization === 'warmonger') interval *= 0.7;
-    return interval;
+  // ── Wall production (own queue + timer; runs alongside soldiers) ─────────────
+  _buildWalls(state, player, dtMs) {
+    const base = player.base;
+    const q    = base.wallQueue;
+    if (!q.length) { base.wallBuildTimer = 0; return; }
+
+    const def = SOLDIER_DEFS.sentinel; // the Defender's cost/time
+    const speedMul = base.specialization === 'warmonger' ? 0.7 : 1;
+    base.wallBuildTimer += dtMs;
+    if (base.wallBuildTimer < def.spawnMs * speedMul) return;
+
+    if (base.gold < def.cost) return; // hold until affordable (no pop for walls)
+
+    base.wallBuildTimer = 0;
+    base.gold -= def.cost;
+    addWallCell(base);
+
+    const head = q[0];
+    head.count--;
+    if (head.count <= 0) q.shift();
   }
 
-  // ── Soldier Movement ──────────────────────────────────────────────────────
-  _moveSoldiers(state, dt, dtMs) {
-    for (const [, sol] of state.soldiers) {
-      if (sol.hp <= 0) continue;
-      const { kind, targetId, position } = sol.order;
-
-      let targetPos = null;
-      let stopDist  = 8;
-
-      if (kind === 'move' || kind === 'attackMove') {
-        targetPos = position;
-        stopDist  = 12;
-      } else if (kind === 'attack') {
-        const t = state.resolve(targetId);
-        if (!t || t.hp <= 0) { sol.order = { kind: 'idle', targetId: null, position: null }; continue; }
-        targetPos = t.position ?? _linkMid(state, t);
-        stopDist  = 28;
-      } else if (kind === 'harvest') {
-        const eat = state.eatables.get(targetId);
-        if (!eat) { sol.order = { kind: 'idle', targetId: null, position: null }; continue; }
-        targetPos = eat.position;
-        stopDist  = HARVEST_RANGE;
-      } else if (kind === 'claim') {
-        const node = state.nodeSites.get(targetId);
-        if (!node) { sol.order = { kind: 'idle', targetId: null, position: null }; continue; }
-        targetPos = node.position;
-        stopDist  = CLAIM_RANGE;
-      }
-
-      if (!targetPos) continue;
-
-      const dx = targetPos.x - sol.position.x;
-      const dy = targetPos.y - sol.position.y;
-      const d2 = dx * dx + dy * dy;
-
-      if (d2 > stopDist * stopDist) {
-        const len   = Math.sqrt(d2);
-        const speed = sol.speed * dt;
-        sol.position.x += (dx / len) * speed;
-        sol.position.y += (dy / len) * speed;
-        sol.facing = Math.atan2(dy, dx);
-      } else {
-        // Arrived
-        if (kind === 'move') {
-          sol.order = { kind: 'idle', targetId: null, position: null };
-        } else if (kind === 'attackMove' && !targetId) {
-          sol.order = { kind: 'idle', targetId: null, position: null };
-        }
-        // claim/harvest handled separately below
-      }
-
-      // ── Eatable collection on proximity ──────────────────────────────────
-      if (kind === 'harvest') {
-        const eat = state.eatables.get(targetId);
-        if (eat && dist2(sol.position, eat.position) < HARVEST_RANGE * HARVEST_RANGE) {
-          let xp = eat.xpValue;
-          if (sol.type === 'harvester') xp = Math.floor(xp * 1.75);
-          const player = state.players.get(sol.ownerId);
-          if (player) player.pendingXP += xp;
-          state.eatables.delete(eat.id);
-          sol.order = { kind: 'idle', targetId: null, position: null };
-          state.event('eatableCollected', { x: eat.position.x, y: eat.position.y, xp });
-        }
-      }
-    }
+  _emitSoldier(state, player, type) {
+    const base  = player.base;
+    const angle = Math.random() * Math.PI * 2;
+    const r     = 55 + Math.random() * 20;
+    const x     = base.position.x + Math.cos(angle) * r;
+    const y     = base.position.y + Math.sin(angle) * r;
+    const sol   = new Soldier(player.id, type, x, y);
+    state.soldiers.set(sol.id, sol);
+    return sol;
   }
 
-  // ── Node Claiming ─────────────────────────────────────────────────────────
-  _updateClaiming(state, dtMs) {
-    for (const [, sol] of state.soldiers) {
-      if (sol.order.kind !== 'claim' || sol.hp <= 0) continue;
+  // ── Turret production ──────────────────────────────────────────────────────
+  _buildTurret(state, player) {
+    const base = player.base;
+    const q    = base.turretQueue;
+    if (!q.length) return;
 
-      const node = state.nodeSites.get(sol.order.targetId);
-      if (!node) { sol.order = { kind: 'idle', targetId: null, position: null }; continue; }
+    const head = q[0];
+    const def  = TURRET_DEFS[head.type];
+    if (!def || base.level < def.unlockLv) { q.shift(); return; }
 
-      // Already owned by us
-      if (node.ownerId === sol.ownerId && node.status === 'claimed') {
-        sol.order = { kind: 'idle', targetId: null, position: null }; continue;
-      }
+    if (state.turretCount(base.id) >= MAX_TURRETS_PER_BASE) { q.shift(); return; }
+    if (base.gold < def.cost) return; // hold until affordable
 
-      // Must be in range
-      if (dist2(sol.position, node.position) > CLAIM_RANGE * CLAIM_RANGE) continue;
-
-      // Assign claimer
-      if (node.claimerSoldierId !== sol.id) {
-        node.claimerSoldierId = sol.id;
-        node.claimProgress    = 0;
-      }
-
-      // Progress
-      const player = state.players.get(sol.ownerId);
-      let rate = 1 / CLAIM_TIME;
-      if (player?.base.specialization === 'sprawl') rate /= 0.6; // 40% faster
-
-      node.claimProgress += rate * dtMs;
-
-      if (node.claimProgress >= 1) {
-        this._claimNode(state, sol, node);
-      }
-    }
+    base.gold -= def.cost;
+    this._mountTurret(state, player, head.type);
+    q.shift();
   }
 
-  _claimNode(state, soldier, node) {
-    const prevOwner = node.ownerId;
-    node.ownerId        = soldier.ownerId;
-    node.status         = 'claimed';
-    node.claimProgress  = 0;
-    node.claimerSoldierId = null;
-    node.hp             = node.maxHp;
-
-    // Find closest anchor (base or owned node) within link range
-    const player = state.players.get(soldier.ownerId);
-    if (!player) return;
-
-    let anchor = null, anchorD2 = Infinity;
-    const lrange = player.base.linkRange;
-
-    // Check base
-    const bd2 = dist2(node.position, player.base.position);
-    if (bd2 < lrange * lrange && bd2 < anchorD2) {
-      anchor = player.base; anchorD2 = bd2;
-    }
-    // Check owned nodes
-    for (const [, n] of state.nodeSites) {
-      if (n.ownerId !== soldier.ownerId || n.status !== 'claimed' || n.id === node.id) continue;
-      const d2 = dist2(node.position, n.position);
-      if (d2 < lrange * lrange && d2 < anchorD2) { anchor = n; anchorD2 = d2; }
-    }
-
-    if (anchor) {
-      // Check link capacity on anchor
-      const cap = player.base.linkCapacity + (player.base.specialization === 'sprawl' ? 1 : 0);
-      const used = state.linkCountFrom(soldier.ownerId, anchor.id);
-      if (used < cap) {
-        const link = new Link(soldier.ownerId, anchor.id, node.id);
-        state.links.set(link.id, link);
-      }
-    }
-
-    state.notify('🔵 Node claimed!', 'success', soldier.ownerId);
-    soldier.order = { kind: 'idle', targetId: null, position: null };
-  }
-
-  // ── Eatable Respawn ───────────────────────────────────────────────────────
-  _updateEatableRespawn(state, dtMs) {
-    if (state.eatables.size >= EATABLE_TARGET) return;
-    state.eatTimer = (state.eatTimer || 0) + dtMs;
-    if (state.eatTimer > EATABLE_SPAWN_MS) {
-      state.eatTimer = 0;
-      const toSpawn = Math.min(5, EATABLE_TARGET - state.eatables.size);
-      for (let i = 0; i < toSpawn; i++) spawnEatable(state);
-    }
+  _mountTurret(state, player, type) {
+    const base  = player.base;
+    // Distribute mounts evenly around the base ring.
+    const slot  = state.turretCount(base.id);
+    const angle = (slot / MAX_TURRETS_PER_BASE) * Math.PI * 2 - Math.PI / 2;
+    const R     = 46;
+    const x     = base.position.x + Math.cos(angle) * R;
+    const y     = base.position.y + Math.sin(angle) * R;
+    const turret = new Turret(player.id, type, base.id, x, y, angle);
+    state.turrets.set(turret.id, turret);
+    state.notify(`🔧 ${type.toUpperCase()} turret mounted`, 'success', player.id);
   }
 
   // ── Spawn Protection ─────────────────────────────────────────────────────
@@ -223,15 +121,4 @@ export class ProductionSystem {
       if (player.base.protectTimer <= 0) player.base.spawnProtected = false;
     }
   }
-}
-
-/** Get the midpoint of a link for soldiers to walk toward */
-function _linkMid(state, link) {
-  const from = state.resolve(link.fromId);
-  const to   = state.resolve(link.toId);
-  if (!from || !to) return null;
-  return {
-    x: (from.position.x + to.position.x) / 2,
-    y: (from.position.y + to.position.y) / 2,
-  };
 }

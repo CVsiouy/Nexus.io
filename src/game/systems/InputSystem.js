@@ -1,13 +1,22 @@
-import { pointSegDist2, dist2 } from '../../utils/helpers.js';
-import { MIN_ZOOM, MAX_ZOOM, WORLD_SIZE } from '../constants.js';
-
-const LINK_CLICK_DIST = 14; // pixels in world space
+import { dist2 } from '../../utils/helpers.js';
+import { MIN_ZOOM, MAX_ZOOM, WORLD_SIZE, CENTER_RADIUS } from '../constants.js';
+import {
+  moveGroup, attackWithGroup, setDefending, setFarming,
+  splitGroup, mergeGroup, balanceGroups,
+} from './GroupSystem.js';
 
 /**
  * InputSystem
  * ───────────
- * Handles all player mouse/keyboard input.
- * Converts screen → world coordinates and dispatches orders to soldiers.
+ * Group-based control. The player commands one squad at a time and the camera
+ * only ever shows the mother base OR one formation (no free roaming):
+ *
+ *   Left-click own squad  → select it (camera focuses it)
+ *   Left-click enemy/base  → selected squad attacks (locks until target dies)
+ *   Left-click ground      → selected squad moves there
+ *   Space                  → focus the mother base
+ *   Tab                    → cycle focus through base + your squads
+ *   X split · C merge · V balance · F defend
  */
 export class InputSystem {
   constructor(app, worldContainer, camera, state) {
@@ -15,236 +24,141 @@ export class InputSystem {
     this._wc    = worldContainer;
     this._cam   = camera;
     this._state = state;
-
-    this.boxStart    = null; // { x, y } in screen space
-    this.boxCurrent  = null;
-    this.isBoxing    = false;
-    this.isDragging  = false; // camera drag (middle-click or space+drag)
-    this.dragStart   = null;
-    this.keys        = {};
-
-    this.onSpecialization = null; // callback
-
     this._bindEvents();
   }
 
-  // ── Public ────────────────────────────────────────────────────────────────
+  update(dt) { /* camera follow handled in Game loop */ }
 
-  /** Call from game loop to handle held keys */
-  update(dt) {
-    const cam = this._cam;
-    const pan = 400 * dt / cam.zoom;
-    if (this.keys['KeyW'] || this.keys['ArrowUp'])    { cam.y -= pan; cam.follow = false; }
-    if (this.keys['KeyS'] || this.keys['ArrowDown'])  { cam.y += pan; cam.follow = false; }
-    if (this.keys['KeyA'] || this.keys['ArrowLeft'])  { cam.x -= pan; cam.follow = false; }
-    if (this.keys['KeyD'] || this.keys['ArrowRight']) { cam.x += pan; cam.follow = false; }
-
-    // Clamp
-    cam.x = Math.max(0, Math.min(WORLD_SIZE, cam.x));
-    cam.y = Math.max(0, Math.min(WORLD_SIZE, cam.y));
+  // ── Focus control ────────────────────────────────────────────────────────
+  focusBase() {
+    this._cam.focusType = 'base';
+    this._cam.focusId   = null;
+    this._deselectAll();
   }
 
-  getBoxRect() {
-    if (!this.isBoxing || !this.boxStart || !this.boxCurrent) return null;
-    return {
-      x:  Math.min(this.boxStart.x, this.boxCurrent.x),
-      y:  Math.min(this.boxStart.y, this.boxCurrent.y),
-      w:  Math.abs(this.boxCurrent.x - this.boxStart.x),
-      h:  Math.abs(this.boxCurrent.y - this.boxStart.y),
-    };
+  focusGroup(g) {
+    this._deselectAll();
+    g.selected = true;
+    this._cam.focusType = 'group';
+    this._cam.focusId   = g.id;
   }
 
-  // ── Private ───────────────────────────────────────────────────────────────
+  cycleFocus() {
+    const groups = this._state.groupsOf(this._state.playerId);
+    // Order: base → g0 → g1 → … → base
+    if (this._cam.focusType === 'base') {
+      if (groups[0]) this.focusGroup(groups[0]);
+      return;
+    }
+    const idx = groups.findIndex(g => g.id === this._cam.focusId);
+    const next = groups[idx + 1];
+    if (next) this.focusGroup(next);
+    else this.focusBase();
+  }
 
+  selectedGroup() {
+    for (const g of this._state.groupsOf(this._state.playerId))
+      if (g.selected) return g;
+    return null;
+  }
+
+  // ── Events ─────────────────────────────────────────────────────────────────
   _bindEvents() {
     const canvas = this._app.view;
-
-    canvas.addEventListener('mousedown', e => this._onMouseDown(e));
-    canvas.addEventListener('mousemove', e => this._onMouseMove(e));
-    canvas.addEventListener('mouseup',   e => this._onMouseUp(e));
-    canvas.addEventListener('wheel',     e => this._onWheel(e), { passive: false });
+    canvas.addEventListener('mousedown',   e => this._onMouseDown(e));
+    canvas.addEventListener('wheel',       e => this._onWheel(e), { passive: false });
     canvas.addEventListener('contextmenu', e => e.preventDefault());
 
     window.addEventListener('keydown', e => {
-      this.keys[e.code] = true;
-      if (e.code === 'Space') {
-        e.preventDefault();
-        this._cam.follow = true;
-      }
-      if (e.code === 'Escape') {
-        this._deselectAll();
+      switch (e.code) {
+        case 'Space': e.preventDefault(); this.focusBase(); break;
+        case 'Tab':   e.preventDefault(); this.cycleFocus(); break;
+        case 'KeyX':  this._doSplit(); break;
+        case 'KeyC':  this._doMerge(); break;
+        case 'KeyV':  this._doBalance(); break;
+        case 'KeyF':  this._doDefend(); break;
+        case 'Escape': this._deselectAll(); break;
       }
     });
-    window.addEventListener('keyup',   e => { this.keys[e.code] = false; });
   }
 
   _onMouseDown(e) {
+    if (e.button !== 0) return; // only left-click issues orders
     const state = this._state;
     const wp    = this._screenToWorld(e.clientX, e.clientY);
 
-    if (e.button === 1) {
-      // Middle click drag
-      this.isDragging = true;
-      this.dragStart  = { x: e.clientX, y: e.clientY, cx: this._cam.x, cy: this._cam.y };
-      this._cam.follow = false;
+    // 1. Click one of your own soldiers → select its squad + focus it.
+    const ownSol = this._hitOwnSoldier(state, wp);
+    if (ownSol) {
+      const g = state.groups.get(ownSol.groupId);
+      if (g) { this.focusGroup(g); return; }
+    }
+
+    const sel = this.selectedGroup();
+    if (!sel) return;
+
+    if (sel.locked) {
+      state.notify('🔒 This squad is committed — it can\'t be recalled', 'warning', 'player');
       return;
     }
 
-    if (e.button === 2) {
-      // Right-click = attack-move to position
-      const selected = this._getSelected(state);
-      if (selected.length > 0) {
-        for (const sol of selected) {
-          sol.order = { kind: 'attackMove', targetId: null, position: { ...wp } };
-        }
-      }
+    // 2. Click an enemy (soldier / base / boss) → attack (locks the squad).
+    const enemy = this._hitEnemy(state, wp);
+    if (enemy) {
+      attackWithGroup(sel, enemy.id);
+      state.notify('⚔️ Squad committed to the attack!', 'info', 'player');
       return;
     }
 
-    if (e.button === 0) {
-      // Left click — could be box-select start or click-to-select/order
-      this.boxStart   = { x: e.clientX, y: e.clientY };
-      this.boxCurrent = { x: e.clientX, y: e.clientY };
-      this.isBoxing   = false; // will become true if mouse moves enough
-    }
-  }
-
-  _onMouseMove(e) {
-    if (this.isDragging && this.dragStart) {
-      const dx = e.clientX - this.dragStart.x;
-      const dy = e.clientY - this.dragStart.y;
-      this._cam.x = this.dragStart.cx - dx / this._cam.zoom;
-      this._cam.y = this.dragStart.cy - dy / this._cam.zoom;
-      this._cam.follow = false;
-      return;
-    }
-    if (this.boxStart) {
-      const dx = e.clientX - this.boxStart.x;
-      const dy = e.clientY - this.boxStart.y;
-      if (dx * dx + dy * dy > 100) this.isBoxing = true;
-      this.boxCurrent = { x: e.clientX, y: e.clientY };
-    }
-  }
-
-  _onMouseUp(e) {
-    if (e.button === 1) { this.isDragging = false; this.dragStart = null; return; }
-
-    if (e.button === 0) {
-      const state = this._state;
-      const wp    = this._screenToWorld(e.clientX, e.clientY);
-
-      if (this.isBoxing) {
-        // Box-select friendly soldiers
-        const rect = this.getBoxRect();
-        if (rect) {
-          const wTL = this._screenToWorld(rect.x, rect.y);
-          const wBR = this._screenToWorld(rect.x + rect.w, rect.y + rect.h);
-          this._deselectAll();
-          for (const [, sol] of state.soldiers) {
-            if (sol.ownerId !== state.playerId) continue;
-            if (sol.position.x >= wTL.x && sol.position.x <= wBR.x &&
-                sol.position.y >= wTL.y && sol.position.y <= wBR.y) {
-              sol.selected = true;
-            }
-          }
-        }
-      } else {
-        // Single click
-        this._handleClick(state, wp, e);
-      }
-
-      this.boxStart   = null;
-      this.boxCurrent = null;
-      this.isBoxing   = false;
-    }
-  }
-
-  _handleClick(state, wp, e) {
-    const selected = this._getSelected(state);
-    const player   = state.players.get(state.playerId);
-    if (!player?.alive) return;
-
-    // Priority 1: click on a friendly soldier → select it
-    const clickedFriend = this._hitSoldier(state, wp, state.playerId);
-    if (clickedFriend) {
-      if (!e.shiftKey) this._deselectAll();
-      clickedFriend.selected = !clickedFriend.selected;
+    // 3. Click inside the neutral centre → farm eatables (FFA/Team only).
+    const cx = WORLD_SIZE / 2, cy = WORLD_SIZE / 2;
+    if (state.mode !== 'mining' && dist2(wp, { x: cx, y: cy }) < CENTER_RADIUS * CENTER_RADIUS) {
+      setFarming(sel, wp);
       return;
     }
 
-    // Priority 2 (if soldiers selected): click on a target to issue orders
-    if (selected.length > 0) {
-      // Enemy soldier?
-      const enemySol = this._hitEnemySoldier(state, wp);
-      if (enemySol) { this._issueAttack(selected, enemySol.id); return; }
-
-      // Enemy/neutral base?
-      const base = this._hitBase(state, wp);
-      if (base && base.ownerId !== state.playerId) {
-        if (!player.base.spawnProtected || base.ownerId !== null) {
-          this._issueAttack(selected, base.id); return;
-        }
-      }
-
-      // Enemy node?
-      const node = this._hitNode(state, wp);
-      if (node && node.ownerId !== state.playerId && node.ownerId !== null) {
-        this._issueAttack(selected, node.id); return;
-      }
-
-      // Enemy link?
-      const link = this._hitLink(state, wp);
-      if (link && link.ownerId !== state.playerId) {
-        this._issueAttack(selected, link.id); return;
-      }
-
-      // Unclaimed/neutral node site → claim order
-      const unclaimedNode = this._hitNode(state, wp, true);
-      if (unclaimedNode && (unclaimedNode.ownerId === null || unclaimedNode.status === 'neutral')) {
-        // Check if in range of a player anchor
-        if (this._inLinkRange(state, player, unclaimedNode)) {
-          for (const sol of selected) {
-            sol.order = { kind: 'claim', targetId: unclaimedNode.id, position: null };
-          }
-          return;
-        }
-      }
-
-      // Orphaned friendly node → reclaim
-      if (unclaimedNode && unclaimedNode.ownerId === state.playerId && unclaimedNode.status === 'orphaned') {
-        for (const sol of selected) {
-          sol.order = { kind: 'claim', targetId: unclaimedNode.id, position: null };
-        }
-        return;
-      }
-
-      // Click eatable → harvest
-      const eat = this._hitEatable(state, wp);
-      if (eat) {
-        for (const sol of selected) {
-          sol.order = { kind: 'harvest', targetId: eat.id, position: null };
-        }
-        return;
-      }
-
-      // Click empty ground → move
-      for (const sol of selected) {
-        sol.order = { kind: 'move', targetId: null, position: { ...wp } };
-      }
-    } else {
-      // No soldiers selected — deselect on empty click
-      this._deselectAll();
-    }
+    // 4. Click empty ground (or a mining node) → move there. Sitting on a node
+    //    captures it (MiningSystem handles capture by presence).
+    moveGroup(sel, wp.x, wp.y);
   }
 
   _onWheel(e) {
     e.preventDefault();
-    const factor = e.deltaY > 0 ? 0.88 : 1.14;
+    const factor = e.deltaY > 0 ? 0.9 : 1.11;
     this._cam.zoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, this._cam.zoom * factor));
   }
 
-  // ── Helpers ───────────────────────────────────────────────────────────────
+  // ── Group operations ─────────────────────────────────────────────────────
+  _doSplit() {
+    const g = this.selectedGroup();
+    if (!g) return;
+    const ng = splitGroup(this._state, g);
+    if (ng) this._state.notify('✂️ Squad split in two', 'success', 'player');
+    else    this._state.notify('❌ Can\'t split (locked or too small)', 'warning', 'player');
+  }
 
+  _doMerge() {
+    const g = this.selectedGroup();
+    if (!g) return;
+    const merged = mergeGroup(this._state, g);
+    if (merged) { this.focusGroup(merged); this._state.notify('🔗 Squads merged', 'success', 'player'); }
+    else this._state.notify('❌ No friendly squad close enough to merge', 'warning', 'player');
+  }
+
+  _doBalance() {
+    if (balanceGroups(this._state, this._state.playerId))
+      this._state.notify('⚖️ Squads balanced', 'success', 'player');
+    else this._state.notify('❌ Need two free squads to balance', 'warning', 'player');
+  }
+
+  _doDefend() {
+    const g = this.selectedGroup();
+    if (!g) return;
+    const base = this._state.getPlayerBase(this._state.playerId);
+    if (setDefending(g, base)) this._state.notify('🛡️ Squad heading back to defend the mother base', 'success', 'player');
+  }
+
+  // ── Helpers ─────────────────────────────────────────────────────────────────
   _screenToWorld(sx, sy) {
     const cam = this._cam;
     return {
@@ -253,89 +167,35 @@ export class InputSystem {
     };
   }
 
-  _getSelected(state) {
-    const out = [];
-    for (const [, sol] of state.soldiers) {
-      if (sol.ownerId === state.playerId && sol.selected) out.push(sol);
-    }
-    return out;
-  }
-
   _deselectAll() {
-    for (const [, sol] of this._state.soldiers) sol.selected = false;
+    for (const [, g] of this._state.groups)
+      if (g.ownerId === this._state.playerId) g.selected = false;
   }
 
-  _issueAttack(soldiers, targetId) {
-    for (const sol of soldiers) {
-      sol.order = { kind: 'attack', targetId, position: null };
-    }
-  }
-
-  _hitSoldier(state, wp, ownerId) {
-    for (const [, sol] of state.soldiers) {
-      if (sol.ownerId !== ownerId) continue;
-      if (dist2(sol.position, wp) < 14 * 14) return sol;
-    }
-    return null;
-  }
-
-  _hitEnemySoldier(state, wp) {
-    for (const [, sol] of state.soldiers) {
-      if (sol.ownerId === state.playerId || sol.hp <= 0) continue;
-      if (dist2(sol.position, wp) < 14 * 14) return sol;
-    }
-    return null;
-  }
-
-  _hitBase(state, wp) {
-    for (const [, player] of state.players) {
-      if (!player.alive) continue;
-      if (dist2(player.base.position, wp) < 40 * 40) return player.base;
-    }
-    return null;
-  }
-
-  _hitNode(state, wp, includeUnclaimed = false) {
-    let best = null, bestD2 = 22 * 22;
-    for (const [, node] of state.nodeSites) {
-      if (!includeUnclaimed && node.status === 'unclaimed') continue;
-      const d2 = dist2(node.position, wp);
-      if (d2 < bestD2) { bestD2 = d2; best = node; }
+  _hitOwnSoldier(state, wp) {
+    let best = null, bestD2 = 20 * 20;
+    for (const [, s] of state.soldiers) {
+      if (s.ownerId !== state.playerId || s.hp <= 0) continue;
+      const d2 = dist2(s.position, wp);
+      if (d2 < bestD2) { bestD2 = d2; best = s; }
     }
     return best;
   }
 
-  _hitLink(state, wp) {
-    for (const [, link] of state.links) {
-      const from = state.resolve(link.fromId);
-      const to   = state.resolve(link.toId);
-      if (!from || !to) continue;
-      const d2 = pointSegDist2(
-        wp.x, wp.y,
-        from.position.x, from.position.y,
-        to.position.x,   to.position.y
-      );
-      if (d2 < LINK_CLICK_DIST * LINK_CLICK_DIST) return link;
+  _hitEnemy(state, wp) {
+    const me = state.playerId;
+    // Enemy soldier (not a teammate)
+    for (const [, s] of state.soldiers) {
+      if (s.hp <= 0 || !state.areEnemies(me, s.ownerId)) continue;
+      if (dist2(s.position, wp) < 16 * 16) return s;
     }
+    // Enemy base (not a teammate)
+    for (const [, p] of state.players) {
+      if (!p.alive || !state.areEnemies(me, p.id)) continue;
+      if (dist2(p.base.position, wp) < 46 * 46) return p.base;
+    }
+    // Boss
+    if (state.boss && dist2(state.boss.position, wp) < 45 * 45) return state.boss;
     return null;
-  }
-
-  _hitEatable(state, wp) {
-    for (const [, eat] of state.eatables) {
-      if (dist2(eat.position, wp) < 18 * 18) return eat;
-    }
-    return null;
-  }
-
-  _inLinkRange(state, player, node) {
-    const lrange = player.base.linkRange;
-    // Check base range
-    if (dist2(player.base.position, node.position) < lrange * lrange) return true;
-    // Check owned nodes range
-    for (const [, n] of state.nodeSites) {
-      if (n.ownerId !== player.id || n.status !== 'claimed') continue;
-      if (dist2(n.position, node.position) < lrange * lrange) return true;
-    }
-    return false;
   }
 }

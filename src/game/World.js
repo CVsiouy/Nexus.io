@@ -1,119 +1,131 @@
-import { poissonDisc }   from '../utils/PoissonDisc.js';
-import { weightedRandom, randRange, randInt } from '../utils/helpers.js';
-import { Base, GraphNode, Eatable } from './entities.js';
+import { Base, Soldier, MineNode } from './entities.js';
+import { createGroup, setDefending } from './systems/GroupSystem.js';
+import { spawnEatable } from './systems/CenterSystem.js';
 import {
-  WORLD_SIZE, MIN_NODE_DIST, EATABLE_DEFS,
-  EATABLE_TARGET, BOT_COUNT, BOT_COLORS, PLAYER_COLOR,
+  WORLD_SIZE, BOT_COUNT, BOT_COLORS, PLAYER_COLOR, EATABLE_TARGET, TEAM_TINTS,
+  CENTER_RADIUS, MINE_NODE_COUNT, MINE_NODE_MIN_SEP,
 } from './constants.js';
 
-const MARGIN = 400;
-const OUTER_BAND_MIN = 0.28; // 28-42% radius from centre for base placement
-const OUTER_BAND_MAX = 0.42;
+// Bases sit evenly around a ring so the 8 mother bases are spread across the
+// map, well outside the neutral centre. The tight camera means you never see
+// more than one or two at once.
+const RING_RADIUS_FRAC = 0.42;   // ring radius as fraction of world size
+const RING_JITTER      = 70;     // px of random wobble so it isn't a perfect circle
 
 /**
- * Builds the initial world state and populates a GameState.
+ * Builds the initial world: 8 mother bases in a ring, the player's with one
+ * black starting grunt. No nodes, links, or resources — the map is otherwise
+ * empty grid. Bots and groups are wired up in later systems.
  */
-export function buildWorld(state) {
-  const W = WORLD_SIZE;
+export function buildWorld(state, mode = 'ffa') {
+  state.mode = mode;
+  const W  = WORLD_SIZE;
+  const cx = W / 2, cy = W / 2;
+  const R  = W * RING_RADIUS_FRAC;
 
-  // ── 1. Generate node sites ────────────────────────────────────────────────
-  const pts = poissonDisc(W, W, MIN_NODE_DIST);
-  for (const p of pts) {
-    const node = new GraphNode(p.x, p.y);
-    // Increase rarity of high-value eatables toward centre
-    state.nodeSites.set(node.id, node);
+  const total = BOT_COUNT + 1;                 // player + bots
+  const slots = _ringSlots(total, cx, cy, R);
+  const tiers = ['passive', 'passive', 'standard', 'standard', 'standard', 'aggressive', 'aggressive'];
+
+  // Team mode: first half of the ring is BLUE, second half RED (grouped spatially).
+  // The player takes a blue slot. FFA: random colours, player at a random slot.
+  const teams = mode === 'team'
+    ? slots.map((_, i) => (i < Math.ceil(total / 2) ? 'blue' : 'red'))
+    : null;
+  const playerIx = mode === 'team' ? 0 : Math.floor(Math.random() * total);
+
+  let botN = 0;
+  const tintIdx = { blue: 0, red: 0 };
+
+  for (let i = 0; i < total; i++) {
+    const p    = slots[i];
+    const team = teams ? teams[i] : null;
+    const color = team
+      ? TEAM_TINTS[team][tintIdx[team]++ % TEAM_TINTS[team].length]
+      : (i === playerIx ? PLAYER_COLOR : BOT_COLORS[botN % BOT_COLORS.length]);
+
+    if (i === playerIx) {
+      const base = _spawnBase(state, 'player', color, p.x, p.y, null, team);
+      _spawnStartingGrunt(state, 'player', base);
+    } else {
+      const id   = `bot_${botN}`;
+      const tier = tiers[botN % tiers.length];
+      _spawnBase(state, id, color, p.x, p.y, tier, team);
+      botN++;
+    }
   }
 
-  // ── 2. Place player base ──────────────────────────────────────────────────
-  const playerBase = _spawnBase(state, 'player', PLAYER_COLOR, [], W);
-  state.notify('⚡ Claim node sites to expand your network!', 'info', 'player');
-  state.notify('✂️ Sever enemy links to orphan their nodes!', 'info', 'player');
-
-  // ── 3. Place bot bases ───────────────────────────────────────────────────
-  const placedBases = [playerBase];
-  for (let i = 0; i < BOT_COUNT; i++) {
-    const color = BOT_COLORS[i % BOT_COLORS.length];
-    const tiers = ['passive', 'passive', 'standard', 'standard', 'standard', 'aggressive'];
-    const tier  = tiers[i % tiers.length];
-    const botBase = _spawnBase(state, `bot_${i}`, color, placedBases, W, tier);
-    placedBases.push(botBase);
-  }
-
-  // ── 4. Spawn eatables ─────────────────────────────────────────────────────
-  for (let i = 0; i < EATABLE_TARGET; i++) {
-    _spawnEatable(state, W);
+  if (mode === 'mining') {
+    _placeMineNodes(state, cx, cy);
+  } else {
+    // Seed the neutral centre with XP eatables (FFA / Team).
+    for (let i = 0; i < EATABLE_TARGET; i++) spawnEatable(state);
   }
 }
 
-function _spawnBase(state, id, color, existing, W, botTier = null) {
-  const isBot    = id !== 'player';
-  const attempts = 200;
-  let pos;
-
-  for (let a = 0; a < attempts; a++) {
-    const angle = Math.random() * Math.PI * 2;
-    const r     = (OUTER_BAND_MIN + Math.random() * (OUTER_BAND_MAX - OUTER_BAND_MIN)) * W / 2;
-    const cx    = W / 2 + Math.cos(angle) * r;
-    const cy    = W / 2 + Math.sin(angle) * r;
-
-    // Must be far enough from existing bases
-    const tooClose = existing.some(b => {
-      const dx = b.position.x - cx, dy = b.position.y - cy;
-      return dx * dx + dy * dy < 700 * 700;
-    });
-    if (!tooClose) { pos = { x: cx, y: cy }; break; }
+/** Scatter neutral mining nodes across the map — outside the centre, spaced apart. */
+function _placeMineNodes(state, cx, cy) {
+  const W = WORLD_SIZE, margin = 200;
+  const bases = [...state.bases.values()].map(b => b.position);
+  const placed = [];
+  let guard = 0;
+  while (placed.length < MINE_NODE_COUNT && guard++ < 2000) {
+    const x = margin + Math.random() * (W - margin * 2);
+    const y = margin + Math.random() * (W - margin * 2);
+    const p = { x, y };
+    const dc = Math.hypot(x - cx, y - cy);
+    if (dc < CENTER_RADIUS + 60) continue;                          // keep out of the centre
+    const clash = [...placed, ...bases].some(q => Math.hypot(q.x - x, q.y - y) < MINE_NODE_MIN_SEP);
+    if (clash) continue;
+    placed.push(p);
+    const node = new MineNode(x, y);
+    state.mineNodes.set(node.id, node);
   }
-  if (!pos) {
-    // Fallback: random position
-    pos = { x: MARGIN + Math.random() * (W - MARGIN * 2), y: MARGIN + Math.random() * (W - MARGIN * 2) };
-  }
+}
 
-  const base = new Base(id, pos.x, pos.y);
+/** Evenly spaced points around a ring, with a little jitter. */
+function _ringSlots(n, cx, cy, R) {
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const a  = (i / n) * Math.PI * 2 - Math.PI / 2;
+    const jx = (Math.random() * 2 - 1) * RING_JITTER;
+    const jy = (Math.random() * 2 - 1) * RING_JITTER;
+    out.push({ x: cx + Math.cos(a) * R + jx, y: cy + Math.sin(a) * R + jy });
+  }
+  return out;
+}
+
+function _spawnBase(state, id, color, x, y, botTier, team = null) {
+  const isBot = id !== 'player';
+  const base  = new Base(id, x, y);
   state.bases.set(base.id, base);
 
   const player = {
     id,
     isBot,
     botTier,
+    team,          // 'blue' | 'red' | null (FFA)
     base,
     color,
-    alive:      true,
-    pendingXP:  0,
-    _brain:     isBot ? _makeBrain() : null,
+    alive:       true,
+    pendingXP:   0,
+    buffs:       { atk: 0, def: 0, spd: 0 },
+    _brain:      isBot ? { thinkCooldown: 0 } : null,
     _thinkTimer: 0,
   };
   state.players.set(id, player);
-
   return base;
 }
 
-function _makeBrain() {
-  return {
-    phase:         'expand', // expand | harvest | attack | defend
-    attackTarget:  null,     // { type: 'link'|'node'|'base', id }
-    stagingNode:   null,
-    thinkCooldown: 0,
-  };
-}
-
-export function spawnEatable(state) {
-  _spawnEatable(state, WORLD_SIZE);
-}
-
-function _spawnEatable(state, W) {
-  // Weighted type based on distance to centre (inner = rarer types)
-  const x = MARGIN + Math.random() * (W - MARGIN * 2);
-  const y = MARGIN + Math.random() * (W - MARGIN * 2);
-
-  const cx = W / 2, cy = W / 2;
-  const normDist = Math.sqrt((x - cx) ** 2 + (y - cy) ** 2) / (W / 2);
-  // Closer to centre → more type 3 & 4
-  let weights;
-  if (normDist < 0.25)       weights = { 1: 20, 2: 30, 3: 30, 4: 20 };
-  else if (normDist < 0.45)  weights = { 1: 35, 2: 35, 3: 22, 4: 8  };
-  else                       weights = { 1: 55, 2: 30, 3: 12, 4: 3  };
-
-  const type  = parseInt(weightedRandom(weights));
-  const eat   = new Eatable(type, x, y);
-  state.eatables.set(eat.id, eat);
+function _spawnStartingGrunt(state, ownerId, base) {
+  const angle = Math.random() * Math.PI * 2;
+  const r     = 60;
+  const x     = base.position.x + Math.cos(angle) * r;
+  const y     = base.position.y + Math.sin(angle) * r;
+  const sol   = new Soldier(ownerId, 'grunt', x, y);
+  state.soldiers.set(sol.id, sol);
+  // Put the starting grunt in its own squad, defending (circling) the base.
+  const grp = createGroup(state, sol);
+  setDefending(grp, base);
+  return sol;
 }

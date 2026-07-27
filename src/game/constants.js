@@ -1,67 +1,134 @@
 // ─── World ───────────────────────────────────────────────────────────────────
-export const WORLD_SIZE       = 6000;
-export const MIN_NODE_DIST    = 145;
+// Bases sit in a ring; the tight camera (see below) means you only ever see a
+// small slice of this. Larger map + wider spacing gives room to build walls and
+// time to react before an enemy squad arrives.
+export const WORLD_SIZE       = 2800;
+// The middle of the map is a neutral zone: no bases spawn here. It holds XP
+// "eatables" and roaming neutral units (see below) — a diep.io-style hunting ground.
+export const CENTER_RADIUS    = 560;
 
 // ─── Timing (ms) ─────────────────────────────────────────────────────────────
-export const SPAWN_INTERVAL   = 4000;
-export const CLAIM_TIME       = 5000;
-export const ORPHAN_GRACE     = 12000;
-export const LINK_REGEN_DELAY = 5000;
 export const BOSS_INTERVAL    = 15 * 60 * 1000;
 export const SPAWN_PROTECT    = 20000;
 export const BOT_THINK_RATE   = 2000;
 
 // ─── HP ──────────────────────────────────────────────────────────────────────
-export const BASE_HP          = 1000;
-export const NODE_HP          = 300;
-export const LINK_HP          = 120;
+export const BASE_HP          = 5000;  // mother base is very tough now
 export const BOSS_HP          = 5000;
-export const LINK_REGEN_RATE  = 2;   // HP per second
 
 // ─── Ranges ──────────────────────────────────────────────────────────────────
-export const LINK_RANGE       = 420;
-export const LINK_CAPACITY    = 3;
-export const VISION_RADIUS    = 950;
 export const ATTACK_RANGE     = 32;
-export const CLAIM_RANGE      = 48;
-export const HARVEST_RANGE    = 42;
 
 // ─── Soldier definitions ──────────────────────────────────────────────────────
+// pop     = population budget this unit consumes (cap is a budget, not a headcount)
+// cost    = GOLD spent to queue one (shared gold pool — see Economy)
+// spawnMs = time the base takes to produce one
+// unlockLv= base level at which the unit becomes buyable
+// color = the unit's own tint (used for the saboteur's black body); most units
+// render in their owner's colour — see GameRenderer._drawSoldiers.
 export const SOLDIER_DEFS = {
-  grunt:     { hp: 20, damage: 4,  speed: 80,  autoR: 130, color: 0xffffff,  xpGain: 2,  unlockLv: 1  },
-  harvester: { hp: 15, damage: 2,  speed: 110, autoR: 90,  color: 0xffd700,  xpGain: 1,  unlockLv: 3, xpMult: 1.75 },
-  sentinel:  { hp: 35, damage: 5,  speed: 55,  autoR: 200, color: 0x60a5fa,  xpGain: 3,  unlockLv: 8, defBonus: 1.5  },
-  saboteur:  { hp: 15, damage: 3,  speed: 110, autoR: 90,  color: 0xf472b6,  xpGain: 3,  unlockLv: 8, structMult: 2 },
-  vanguard:  { hp: 50, damage: 9,  speed: 80,  autoR: 160, color: 0xfbbf24,  xpGain: 6,  unlockLv: 20 },
+  grunt:    { hp: 20, damage: 4,  speed: 80,  autoR: 130, color: 0xffffff, xpGain: 2, unlockLv: 1,  pop: 1, cost: 25,  spawnMs: 2500 },
+  // 'sentinel' is the DEFENDER (a static wall cell — see walls.js). Available from the start.
+  sentinel: { hp: 45, damage: 6,  speed: 96,  autoR: 210, color: 0x3b82f6, xpGain: 3, unlockLv: 1,  pop: 2, cost: 70,  spawnMs: 3000, defBonus: 1.5 },
+  saboteur: { hp: 15, damage: 3,  speed: 108, autoR: 90,  color: 0x1a1a1a, xpGain: 3, unlockLv: 8,  pop: 2, cost: 60,  spawnMs: 4500, structMult: 2 },
+  vanguard: { hp: 50, damage: 9,  speed: 80,  autoR: 160, color: 0xfbbf24, xpGain: 6, unlockLv: 20, pop: 4, cost: 180, spawnMs: 8000 },
 };
 
-// ─── Eatable definitions ──────────────────────────────────────────────────────
-export const EATABLE_DEFS = {
-  1: { xp: 1,  color: 0xfcd34d, shape: 'square',   sz: 7,  weight: 50 },
-  2: { xp: 4,  color: 0xa855f7, shape: 'triangle', sz: 8,  weight: 30 },
-  3: { xp: 12, color: 0x3b82f6, shape: 'square',   sz: 10, weight: 15 },
-  4: { xp: 35, color: 0xef4444, shape: 'star',     sz: 13, weight: 5  },
+// ─── Combat tuning ─────────────────────────────────────────────────────────────
+// Radii used for range checks & the surround ring when a squad assaults a target.
+export const BASE_RADIUS    = 44;
+export const BOSS_RADIUS    = 40;
+export const SOLDIER_RADIUS = 10;
+export const SURROUND_GAP   = 18;  // squad forms a ring this far outside the target
+// Soldiers hit far harder against a mother base (siege), so a slow one-at-a-time
+// assault still brings a base down in a reasonable time.
+export const STRUCTURE_DMG_MULT = 4;
+
+// ─── Defensive walls (the "Defender" build — static cells ringing the base) ─────
+// Defenders are stationary cells arranged in concentric ring LAYERS around the
+// mother base. Cells in a layer share one pooled HP: to breach a layer, attackers
+// focus its nearest cell and must drain the whole layer's HP there. Layers stack.
+export const DEFENDER_HP        = 8000; // HP each defender cell contributes to its layer's pool (very tanky)
+export const WALL_DMG_MULT      = 16;   // siege multiplier vs WALLS (so a committed army can still breach)
+export const WALL_GAP           = 34;   // distance from base edge to the innermost wall layer
+export const WALL_LAYER_GAP     = 30;   // distance between successive wall layers
+export const WALL_CELLS_BASE    = 10;   // cell capacity of the innermost ring
+export const WALL_CELLS_PER_LAYER = 3;  // extra capacity per outer ring
+export const WALL_CELL_SIZE     = 12;   // radius of a rendered hexagonal wall cell
+// Walls auto-repair a fixed rate once they've gone this long without being hit.
+export const WALL_REPAIR_DELAY  = 10000; // ms of calm before repair begins
+export const WALL_REPAIR_RATE   = 260;   // HP/sec repaired per cell (up to its max)
+
+// ─── Turret definitions (auto-firing base defenses) ────────────────────────────
+// cost    = GOLD to build one (shared pool)
+// range   = auto-acquire radius (world px)
+// damage  = per shot
+// cooldMs = ms between shots
+// splash  = AoE radius on impact (0 = single target)
+// unlockLv= base level required
+export const TURRET_DEFS = {
+  gun:     { cost: 80,  range: 200, damage: 6,  cooldMs: 500,  splash: 0,  unlockLv: 1,  color: 0x2c3e50, projSpeed: 520, projColor: 0x334155 },
+  missile: { cost: 160, range: 300, damage: 18, cooldMs: 1600, splash: 55, unlockLv: 8,  color: 0x7f1d1d, projSpeed: 320, projColor: 0xef4444 },
 };
-export const EATABLE_TARGET   = 250;  // target eatable count on map
-export const EATABLE_SPAWN_MS = 2500; // ms between spawn attempts
+export const MAX_TURRETS_PER_BASE = 6;   // mounting slots around the base ring
+
+// ─── Economy (shared gold pool) ────────────────────────────────────────────────
+export const STARTING_GOLD  = 120;  // enough for a couple of grunts or one gun
+export const GOLD_PER_SEC   = 3;    // base passive mining rate (the base IS a miner)
+export const GOLD_PER_LEVEL = 0.2;  // gentle extra gold/sec per level (flattened — was too steep)
+export const XP_PER_SEC     = 1.0;  // passive XP trickle (keeps leveling advancing)
+export const KILL_XP        = 40;   // XP to the owner for each enemy soldier killed (levels you fast)
+
+// ─── Mining upgrade (buy to raise your gold rate) ──────────────────────────────
+export const MINE_UPGRADE_BASE_COST = 120;  // cost of the first upgrade
+export const MINE_UPGRADE_GROWTH    = 1.7;  // cost multiplier per level (steeper → diminishing)
+export const MINE_BONUS_STEP        = 0.7;  // +gold/sec per upgrade (flattened)
+export const MAX_MINE_LEVEL         = 10;
+
+// ─── Conquest reward (destroy a rival mother base → claim its mine) ─────────────
+export const CONQUEST_INCOME_BONUS = 2;    // permanent +gold/sec per kill
+export const CONQUEST_GOLD_LUMP    = 120;  // one-time gold bounty (× victim level factor)
+export const CONQUEST_XP           = 180;  // one-time XP bounty (× victim level factor)
+
+// ─── Population & supply ──────────────────────────────────────────────────────
+// Big budgets so you can station large formations and still have troops to donate.
+export const POP_BASE       = 26;   // base population budget
+export const POP_PER_LEVEL  = 10;   // extra budget per base level
+
+// ─── Groups & formation ────────────────────────────────────────────────────────
+export const FORMATION_SPACING = 22;   // px between soldiers in a wedge/triangle
+export const GROUP_MERGE_RANGE = 90;   // two groups this close can merge
+export const GROUP_ARRIVE      = 18;   // group counts as "arrived" within this of anchor
+
+// ─── Defense (no formation — soldiers orbit the base & engage independently) ────
+export const DEFENSE_RADIUS  = 280;    // enemies within this of the base are engaged by defenders
+export const ORBIT_RADIUS    = 74;     // radius defenders circle the base at when idle
+export const ORBIT_SPEED     = 0.0016; // radians/ms the defensive ring rotates
+
+// ─── Camera / visibility ────────────────────────────────────────────────────────
+// Tight fixed zoom = you only see a small slice of the map. The camera focuses on
+// EITHER the mother base OR one selected formation — never free-roams.
+export const MIN_ZOOM  = 1.4;
+export const MAX_ZOOM  = 2.6;
+export const DEF_ZOOM  = 1.9;
 
 // ─── Level table ─────────────────────────────────────────────────────────────
 export const LEVELS = [
   { lv:1,  xp:0 },
   { lv:2,  xp:50 },
-  { lv:3,  xp:150,  unlock:'harvester' },
+  { lv:3,  xp:150 },
   { lv:4,  xp:300 },
-  { lv:5,  xp:500,  linkSlots:4, linkRange:500 },
+  { lv:5,  xp:500 },
   { lv:6,  xp:800 },
   { lv:7,  xp:1200 },
-  { lv:8,  xp:1800, unlock:'sentinel,saboteur', autoBonus:1.25 },
+  { lv:8,  xp:1800, unlock:'saboteur' },
   { lv:9,  xp:2600 },
   { lv:10, xp:3600 },
   { lv:11, xp:5000 },
-  { lv:12, xp:7000, nodeReinforce:true },
+  { lv:12, xp:7000 },
   { lv:13, xp:9500 },
   { lv:14, xp:13000 },
-  { lv:15, xp:17000, spec:true, linkSlots:5 },
+  { lv:15, xp:17000, spec:true },
   { lv:16, xp:22000 },
   { lv:17, xp:28000 },
   { lv:18, xp:35000 },
@@ -69,16 +136,55 @@ export const LEVELS = [
   { lv:20, xp:52000, unlock:'vanguard', baseHpBonus:1.3 },
 ];
 
+// ─── Skill points / buffs ─────────────────────────────────────────────────────
+export const SKILL_PTS_PER_LEVEL = 1;    // points granted each level-up
+export const BUFF_STEP            = 0.10; // +10% per point spent in a stat
+
+// ─── Center hunting ground ─────────────────────────────────────────────────────
+// Eatables: destructible shapes soldiers attack for XP (level up → more pop).
+// body = HP an eatable deals back to the soldier hitting it (ramming shapes hurts).
+export const EATABLE_DEFS = {
+  1: { xp: 12, hp: 30,  body: 1, color: 0xfcd34d, shape: 'square',   sz: 11 },
+  2: { xp: 32, hp: 70,  body: 2, color: 0xa855f7, shape: 'triangle', sz: 13 },
+  3: { xp: 95, hp: 170, body: 3, color: 0x3b82f6, shape: 'pentagon', sz: 18 },
+};
+export const EATABLE_TARGET   = 46;    // target eatable count in the centre
+export const EATABLE_SPAWN_MS = 1400;  // ms between spawn attempts
+
+// Neutral "wildlings": map-owned units that roam the centre and attack any
+// soldier nearby. They spawn sparingly and give a big XP bounty when killed.
+export const WILDLING_HP        = 220;
+export const WILDLING_DAMAGE    = 6;
+export const WILDLING_SPEED     = 32;
+export const WILDLING_DETECT    = 230;  // attacks/chases soldiers within this range
+export const WILDLING_XP_BOUNTY = 140;
+export const WILDLING_TARGET    = 4;    // how many roam the centre at once
+export const WILDLING_SPAWN_MS  = 13000;// sparing spawn cadence
+
+// ─── Mining mode (Space STG 3-style node capture) ──────────────────────────────
+// Neutral gold nodes scattered across the map (never in the centre). Send a squad
+// to sit on one and it's captured, then it feeds gold to your base and slowly
+// grows its own defenders. Capturing more nodes is the main growth path here.
+export const MINE_NODE_COUNT     = 9;    // total nodes on the map
+export const MINE_NODE_RADIUS    = 26;   // node body radius (also the capture ring)
+export const MINE_CAPTURE_RANGE  = 90;   // soldiers within this of a node contest it
+export const MINE_CAPTURE_TIME   = 4000; // ms for 1 soldier to flip a node (more = faster)
+export const MINE_NODE_GOLD      = 4;    // gold/sec a captured node adds to its owner
+export const MINE_NODE_SPAWN_MS  = 9000; // a held node grows a grunt this often
+export const MINE_NODE_MIN_SEP   = 360;  // min spacing between nodes / from bases
+
 // ─── Bots ─────────────────────────────────────────────────────────────────────
-export const BOT_COUNT   = 10;
+export const BOT_COUNT   = 7;   // 7 bots + player = 8 mother bases
 export const BOT_COLORS  = [
   0xff4444, 0xff8c00, 0xffd700, 0x44ff66,
-  0x00ffcc, 0xff44dd, 0xff6699, 0x88ff44,
-  0xff9944, 0x44ddff,
+  0x00ffcc, 0xff44dd, 0x88ff44,
 ];
 export const PLAYER_COLOR = 0x00bfff;
 
-// ─── Camera ───────────────────────────────────────────────────────────────────
-export const MIN_ZOOM = 0.15;
-export const MAX_ZOOM = 2.0;
-export const DEF_ZOOM = 0.75;
+// ─── Teams (Team mode: Blue vs Red) ─────────────────────────────────────────────
+export const TEAM_COLORS = { blue: 0x2b7fff, red: 0xff4444 };
+// Per-member tint variation so teammates are distinguishable within a team colour.
+export const TEAM_TINTS  = {
+  blue: [0x2b7fff, 0x4f9dff, 0x1e63d6, 0x6fb0ff],
+  red:  [0xff4444, 0xff6b6b, 0xd62828, 0xff8c8c],
+};

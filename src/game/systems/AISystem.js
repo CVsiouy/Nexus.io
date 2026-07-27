@@ -1,192 +1,123 @@
-import { dist2, dist, randPick } from '../../utils/helpers.js';
-import { BOT_THINK_RATE } from '../constants.js';
+import { dist2 } from '../../utils/helpers.js';
+import { BOT_THINK_RATE, SOLDIER_DEFS, TURRET_DEFS } from '../constants.js';
+import { attackWithGroup, setDefending, moveGroup } from './GroupSystem.js';
+import { buyMineUpgrade, mineUpgradeCost } from './ProgressionSystem.js';
 
 /**
- * AISystem
- * ────────
- * Three-tier bot AI:
- *   passive   — expand slowly, harvest eatables, avoid combat
- *   standard  — expand, harvest, occasionally attack weak neighbors
- *   aggressive — actively hunts trunk links, steals orphaned nodes
+ * AISystem — bot brains for the 7 rival mother bases
+ * ───────────────────────────────────────────────────
+ * Each tier balances economy (buy soldiers/turrets from gold) against
+ * aggression (send a formed-up squad at the nearest enemy base):
+ *   passive    — turtles: buys turrets, only attacks with a big squad
+ *   standard   — buys a mix, attacks at a moderate squad size
+ *   aggressive — buys soldiers fast, attacks early and often
  */
 export class AISystem {
   update(state, dtMs) {
     for (const [, player] of state.players) {
       if (!player.isBot || !player.alive) continue;
-
       player._thinkTimer -= dtMs;
       if (player._thinkTimer > 0) continue;
-      player._thinkTimer = BOT_THINK_RATE + Math.random() * 500; // stagger bots
-
+      player._thinkTimer = BOT_THINK_RATE + Math.random() * 800;
       this._think(state, player);
     }
   }
 
   _think(state, player) {
-    const tier  = player.botTier;
-    const brain = player._brain;
-    const base  = player.base;
+    const tier = player.botTier;
+    const base = player.base;
 
-    // Gather my soldiers
-    const mySoldiers = [];
-    for (const [, sol] of state.soldiers) {
-      if (sol.ownerId === player.id && sol.hp > 0) mySoldiers.push(sol);
+    this._economy(state, player, tier);
+
+    // Squad size to commit an attack, by tier.
+    const attackAt = tier === 'aggressive' ? 4 : tier === 'standard' ? 6 : 9;
+
+    const threat = this._threatNearBase(state, player);
+    const groups = state.groupsOf(player.id).filter(g => !g.locked);
+
+    if (threat) {
+      // Pull the biggest free squad back to defend the base.
+      const def = groups.sort((a, b) => b.memberIds.length - a.memberIds.length)[0];
+      if (def) setDefending(def, base);
+      return;
     }
 
-    const myNodes = state.nodeCount(player.id);
-
-    // ── 1. Try to expand (all tiers do this) ─────────────────────────────
-    if (mySoldiers.length > 0) {
-      const claimTarget = this._findClaimTarget(state, player);
-      if (claimTarget) {
-        // Send 1-2 idle grunts to claim
-        const idle = mySoldiers.filter(s => s.order.kind === 'idle').slice(0, 2);
-        for (const sol of idle) {
-          sol.order = { kind: 'claim', targetId: claimTarget.id, position: null };
-        }
+    // Mining mode: send free squads to grab the nearest node we don't own.
+    if (state.mode === 'mining') {
+      for (const g of groups) {
+        if (g.status === 'moving' || g.memberIds.length < 2) continue;
+        const node = this._nearestCapturableNode(state, player);
+        if (node && Math.random() < 0.6) { moveGroup(g, node.position.x, node.position.y); return; }
       }
     }
 
-    // ── 2. Harvest eatables ───────────────────────────────────────────────
-    if (tier !== 'passive' || myNodes < 3) {
-      const eat = this._findNearestEatable(state, player);
-      if (eat) {
-        const idle = mySoldiers.filter(s => s.order.kind === 'idle').slice(0, 1);
-        for (const sol of idle) {
-          sol.order = { kind: 'harvest', targetId: eat.id, position: null };
-        }
-      }
-    }
-
-    // ── 3. Attack (standard and aggressive only) ─────────────────────────
-    if (tier === 'passive') return;
-
-    if (mySoldiers.length < 4) return; // not enough soldiers to attack
-
-    if (tier === 'standard') {
-      // Random chance to attack
-      if (Math.random() < 0.35) {
-        this._standardAttack(state, player, mySoldiers);
-      }
-    } else if (tier === 'aggressive') {
-      this._aggressiveAttack(state, player, mySoldiers);
-    }
-
-    // ── 4. Reclaim orphaned nodes ─────────────────────────────────────────
-    for (const [, node] of state.nodeSites) {
-      if (node.status !== 'neutral' && node.status !== 'orphaned') continue;
-      if (!this._inRange(state, player, node)) continue;
-      const sol = mySoldiers.find(s => s.order.kind === 'idle');
-      if (sol) {
-        sol.order = { kind: 'claim', targetId: node.id, position: null };
-        break;
-      }
+    // Commit any free squad that has reached attack strength.
+    for (const g of groups) {
+      if (g.memberIds.length < attackAt) continue;
+      const target = this._nearestEnemyBase(state, player);
+      if (target) attackWithGroup(g, target.id);
     }
   }
 
-  // ── Expansion ────────────────────────────────────────────────────────────
-
-  _findClaimTarget(state, player) {
-    // Find nearest unclaimed/neutral node within link range of our network
+  _nearestCapturableNode(state, player) {
     let best = null, bestD2 = Infinity;
-    const lrange = player.base.linkRange;
-
-    for (const [, node] of state.nodeSites) {
-      if (node.status === 'claimed' || node.claimerSoldierId) continue;
+    for (const [, node] of state.mineNodes) {
       if (node.ownerId === player.id) continue;
-
-      // Must be reachable from our base or a claimed node
-      if (!this._inRange(state, player, node)) continue;
-
-      // Prefer nodes close to our base
-      const d2 = dist2(node.position, player.base.position);
+      const d2 = dist2(player.base.position, node.position);
       if (d2 < bestD2) { bestD2 = d2; best = node; }
     }
     return best;
   }
 
-  _inRange(state, player, node) {
-    const lrange = player.base.linkRange;
-    if (dist2(player.base.position, node.position) < lrange * lrange) return true;
-    for (const [, n] of state.nodeSites) {
-      if (n.ownerId !== player.id || n.status !== 'claimed') continue;
-      if (dist2(n.position, node.position) < lrange * lrange) return true;
+  // ── Economy ──────────────────────────────────────────────────────────────
+  _economy(state, player, tier) {
+    const base = player.base;
+
+    // Invest in mining sometimes — passive turtles reinvest the most.
+    const mineChance = tier === 'passive' ? 0.35 : tier === 'standard' ? 0.2 : 0.12;
+    const mc = mineUpgradeCost(base);
+    if (mc != null && base.gold >= mc * 2 && Math.random() < mineChance) buyMineUpgrade(state, base);
+
+    // ── Turrets disabled for now (soldiers-only build). Kept for later re-enable. ──
+    // const turretChance = tier === 'passive' ? 0.5 : tier === 'standard' ? 0.25 : 0.1;
+    // if (base.turretQueue.length === 0 && Math.random() < turretChance) {
+    //   const type = base.level >= TURRET_DEFS.missile.unlockLv && Math.random() < 0.4 ? 'missile' : 'gun';
+    //   const def  = TURRET_DEFS[type];
+    //   if (base.gold >= def.cost && base.level >= def.unlockLv) base.turretQueue.push({ type });
+    // }
+
+    // Build a WALL sometimes (own queue → runs in parallel with soldiers).
+    const wallChance = tier === 'passive' ? 0.4 : tier === 'standard' ? 0.25 : 0.12;
+    if (base.wallQueue.length === 0 && Math.random() < wallChance && base.gold >= SOLDIER_DEFS.sentinel.cost) {
+      base.wallQueue.push({ type: 'sentinel', count: 1 });
     }
-    return false;
+
+    // Keep a grunt queued (soldier queue) if there's population room.
+    if (base.soldierQueue.length === 0) {
+      const def = SOLDIER_DEFS.grunt;
+      if (state.soldierPop(player.id) + def.pop <= state.popCap(player)) {
+        base.soldierQueue.push({ type: 'grunt', count: 1 });
+      }
+    }
   }
 
-  // ── Harvesting ───────────────────────────────────────────────────────────
-
-  _findNearestEatable(state, player) {
+  // ── Targeting / threat (team-aware) ─────────────────────────────────────────
+  _nearestEnemyBase(state, player) {
     let best = null, bestD2 = Infinity;
-    const anchorPos = player.base.position;
-    for (const [, eat] of state.eatables) {
-      const d2 = dist2(eat.position, anchorPos);
-      if (d2 < bestD2) { bestD2 = d2; best = eat; }
+    for (const [, p] of state.players) {
+      if (!p.alive || !state.areEnemies(player.id, p.id)) continue;
+      const d2 = dist2(player.base.position, p.base.position);
+      if (d2 < bestD2) { bestD2 = d2; best = p.base; }
     }
     return best;
   }
 
-  // ── Standard attack ───────────────────────────────────────────────────────
-
-  _standardAttack(state, player, mySoldiers) {
-    // Find the closest enemy network and attack nearest visible node/link
-    let target = null, targetD2 = Infinity;
-
-    for (const [, enemy] of state.players) {
-      if (enemy.id === player.id || !enemy.alive) continue;
-      const d2 = dist2(player.base.position, enemy.base.position);
-      if (d2 < targetD2) { targetD2 = d2; target = enemy; }
+  _threatNearBase(state, player) {
+    const R2 = 220 * 220;
+    for (const [, e] of state.soldiers) {
+      if (e.hp <= 0 || !state.areEnemies(player.id, e.ownerId)) continue;
+      if (dist2(e.position, player.base.position) < R2) return e;
     }
-    if (!target) return;
-
-    // Attack their nearest node
-    for (const [, node] of state.nodeSites) {
-      if (node.ownerId !== target.id || node.status !== 'claimed') continue;
-      const attackers = mySoldiers.filter(s => s.order.kind === 'idle').slice(0, 3);
-      for (const sol of attackers) {
-        sol.order = { kind: 'attack', targetId: node.id, position: null };
-      }
-      return;
-    }
-
-    // If no nodes, attack their base
-    const attackers = mySoldiers.filter(s => s.order.kind === 'idle').slice(0, 3);
-    for (const sol of attackers) {
-      sol.order = { kind: 'attack', targetId: target.base.id, position: null };
-    }
-  }
-
-  // ── Aggressive attack ─────────────────────────────────────────────────────
-
-  _aggressiveAttack(state, player, mySoldiers) {
-    // Find the thinnest (lowest HP) trunk link closest to an enemy base
-    let bestLink = null, bestScore = Infinity;
-
-    for (const [, link] of state.links) {
-      if (link.ownerId === player.id) continue;
-      const from = state.resolve(link.fromId);
-      const to   = state.resolve(link.toId);
-      if (!from || !to) continue;
-
-      // Score = distance to enemy base × link HP  (prefer close, weak links)
-      const owner = state.players.get(link.ownerId);
-      if (!owner?.alive) continue;
-      const dToBase = dist(from.position, owner.base.position) +
-                      dist(to.position,   owner.base.position);
-      const score = dToBase * 0.001 + link.hp;
-      if (score < bestScore) { bestScore = score; bestLink = link; }
-    }
-
-    if (bestLink) {
-      const attackers = mySoldiers.filter(s => s.order.kind === 'idle').slice(0, 5);
-      for (const sol of attackers) {
-        sol.order = { kind: 'attack', targetId: bestLink.id, position: null };
-      }
-      return;
-    }
-
-    // Fallback to standard
-    this._standardAttack(state, player, mySoldiers);
+    return null;
   }
 }
