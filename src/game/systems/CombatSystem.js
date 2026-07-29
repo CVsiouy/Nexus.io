@@ -65,8 +65,8 @@ export class CombatSystem {
       const s = state.soldiers.get(id);
       if (!s || s.hp <= 0) continue;
       if (s.atkCd > 0) continue;
-      if (this._enemyNear(state, s)) continue;               // priority: fight enemy soldiers first
       if (dist2(s.position, near.pos) > eff * eff) continue;  // must be at the breach point
+      // NOTE: unlike the base, walls take damage even with enemy soldiers around.
 
       const destroyed = damageCell(base, layer, near.cell, this._siegeDamage(state, s), now);
       s.atkCd = STRIKE_CD;

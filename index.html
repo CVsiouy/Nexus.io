@@ -185,10 +185,21 @@
     #build-panel {
       position: absolute; bottom: 14px; left: 50%;
       transform: translateX(-50%);
-      padding: 8px 10px;
-      display: flex; align-items: stretch; gap: 6px;
+      padding: 5px 8px;
+      display: flex; align-items: stretch; gap: 5px;
       pointer-events: all;
+      background: rgba(255,255,255,0.55);   /* slimmer + semi-transparent */
+      backdrop-filter: blur(5px);
     }
+    /* Slimmer build buttons */
+    #build-panel .unit-btn, #build-panel .econ-btn, #build-panel .turret-btn {
+      min-width: 54px; padding: 4px 7px; border-radius: 8px;
+      background: rgba(255,255,255,0.55);
+    }
+    #build-panel .unit-btn .u-icon, #build-panel .econ-btn .u-icon, #build-panel .turret-btn .u-icon { font-size: 15px; }
+    #build-panel .u-name { font-size: 9px; }
+    #build-panel .u-cost { font-size: 7px; }
+    #build-panel .panel-handle { margin-bottom: 4px; }
     #build-panel .bp-label {
       font-family: 'Rajdhani', sans-serif;
       font-size: 9px; font-weight: 700;
@@ -555,10 +566,10 @@
     #gold-row .g-lbl { font-size: 10px; color: #7b8fa1; font-weight: 600; letter-spacing: 1px; }
     #gold-row .g-rate { margin-left: auto; font-size: 11px; color: #16a34a; font-weight: 700; font-family: 'Rajdhani', sans-serif; }
 
-    /* ─── Group / squad panel (top-left, right below the Buffs panel) ─── */
+    /* ─── Group / squad panel (top-left, clear of the expanded Buffs panel) ─── */
     #group-panel {
-      position: absolute; top: 96px; left: 14px;
-      padding: 10px 10px; min-width: 92px; max-height: 62vh; overflow-y: auto;
+      position: absolute; top: 176px; left: 14px;
+      padding: 10px 10px; min-width: 92px; max-height: 58vh; overflow-y: auto;
     }
     /* Minimap (Map) panel hidden for now. */
     #minimap-wrap { display: none !important; }
@@ -724,8 +735,9 @@
           <span class="key-badge"><kbd>Click enemy</kbd> Attack (locks)</span>
         </div>
         <div class="ctrl-row">
+          <span class="key-badge"><kbd>WASD</kbd> Pan map</span>
           <span class="key-badge"><kbd>Space</kbd> Snap to base</span>
-          <span class="key-badge"><kbd>Tab</kbd> Cycle squads / overview</span>
+          <span class="key-badge"><kbd>Tab</kbd> Cycle squads</span>
           <span class="key-badge"><kbd>Scroll</kbd> Zoom</span>
         </div>
         <div class="ctrl-row">
@@ -752,7 +764,7 @@
     <div id="cmd-bar" class="panel">
       <button class="cmd-btn" id="cmd-defend"  title="Send the selected squad to defend the mother base"><span class="c-icon">🛡️</span><span class="c-name">Defend</span><span class="c-key">F</span></button>
       <button class="cmd-btn" id="cmd-base"    title="Focus camera on your mother base"><span class="c-icon">🏠</span><span class="c-name">Base</span><span class="c-key">Spc</span></button>
-      <button class="cmd-btn" id="cmd-donate"  title="Donate up to 5 soldiers to a teammate (Team mode)" style="display:none"><span class="c-icon">🤝</span><span class="c-name">Donate</span><span class="c-key">D</span></button>
+      <button class="cmd-btn" id="cmd-donate"  title="Donate up to 5 soldiers to a teammate (Team mode)" style="display:none"><span class="c-icon">🤝</span><span class="c-name">Donate</span><span class="c-key">·</span></button>
     </div>
 
     <!-- Build panel (bottom-center) — click to QUEUE (right-click removes soldiers) -->
@@ -776,7 +788,7 @@
         <span class="u-badge"></span>
         <span class="u-icon">🧱</span>
         <span class="u-name">Defender</span>
-        <span class="u-cost">70g</span>
+        <span class="u-cost">40g · max 3 rings</span>
       </div>
 
       <!-- ── Extra soldier types kept for later re-enable. ──

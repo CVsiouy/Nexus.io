@@ -3,7 +3,7 @@ import {
   SOLDIER_DEFS, TURRET_DEFS, MAX_TURRETS_PER_BASE,
 } from '../constants.js';
 import { addSoldierToNearestGroup } from './GroupSystem.js';
-import { addWallCell } from '../walls.js';
+import { addWallCell, canAddWall } from '../walls.js';
 
 /**
  * ProductionSystem
@@ -54,6 +54,7 @@ export class ProductionSystem {
     const base = player.base;
     const q    = base.wallQueue;
     if (!q.length) { base.wallBuildTimer = 0; return; }
+    if (!canAddWall(base)) { base.wallQueue = []; return; } // walls maxed (3 rings)
 
     const def = SOLDIER_DEFS.sentinel; // the Defender's cost/time
     const speedMul = base.specialization === 'warmonger' ? 0.7 : 1;

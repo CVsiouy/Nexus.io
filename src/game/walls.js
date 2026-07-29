@@ -1,8 +1,14 @@
 import {
   BASE_RADIUS, WALL_GAP, WALL_LAYER_GAP,
   WALL_CELLS_BASE, WALL_CELLS_PER_LAYER, DEFENDER_HP,
-  WALL_REPAIR_DELAY, WALL_REPAIR_RATE,
+  WALL_REPAIR_DELAY, WALL_REPAIR_RATE, MAX_WALL_LAYERS,
 } from './constants.js';
+
+/** True if the base can accept another wall cell (a ring has room, or a new ring is allowed). */
+export function canAddWall(base) {
+  if (base.walls.some(l => l.cells.length < l.maxCells)) return true;
+  return base.walls.length < MAX_WALL_LAYERS;
+}
 
 /**
  * Defensive walls
@@ -20,6 +26,7 @@ export function addWallCell(base) {
   // Fill the innermost layer that still has an empty slot; else start a new ring.
   let layer = base.walls.find(l => l.cells.length < l.maxCells);
   if (!layer) {
+    if (base.walls.length >= MAX_WALL_LAYERS) return null; // capped at 3 rings
     const ring     = base.walls.length;
     const radius   = BASE_RADIUS + WALL_GAP + ring * WALL_LAYER_GAP;
     const maxCells = WALL_CELLS_BASE + ring * WALL_CELLS_PER_LAYER;

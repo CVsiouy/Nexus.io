@@ -13,6 +13,7 @@ import { ProgressionSystem } from './systems/ProgressionSystem.js';
 import { GameRenderer }      from './renderer/GameRenderer.js';
 import { HUDRenderer }       from './renderer/HUDRenderer.js';
 import { buyMineUpgrade }    from './systems/ProgressionSystem.js';
+import { canAddWall }        from './walls.js';
 import { DEF_ZOOM, MIN_ZOOM, WORLD_SIZE, SOLDIER_DEFS, TURRET_DEFS, MAX_TURRETS_PER_BASE } from './constants.js';
 
 export class Game {
@@ -129,6 +130,7 @@ export class Game {
       this._app.renderer.resize(window.innerWidth, window.innerHeight);
       this._camera.width = window.innerWidth;
       this._camera.height = window.innerHeight;
+      this._camera.zoom = (this._camera.width / WORLD_SIZE) * 0.98; // keep the fixed wide view
     });
 
     document.getElementById('menu-btn')  .addEventListener('click', () => this.togglePause());
@@ -140,7 +142,6 @@ export class Game {
         const specOpen = document.getElementById('spec-modal').classList.contains('vis');
         if (!specOpen) this.togglePause();
       }
-      if (e.code === 'KeyD' && this._running && !this._gameOver) this._donate();
     });
     document.getElementById('restart-btn').addEventListener('click', () => location.reload());
   }
@@ -165,7 +166,7 @@ export class Game {
     cam.focusId   = null;
     cam.x = WORLD_SIZE / 2;
     cam.y = WORLD_SIZE / 2;
-    cam.zoom = Math.max(MIN_ZOOM, Math.min(cam.width / WORLD_SIZE, cam.height / WORLD_SIZE) * 0.95);
+    cam.zoom = (cam.width / WORLD_SIZE) * 0.98; // fixed wide view — whole map width
 
     this.start();
   }
@@ -320,6 +321,7 @@ export class Game {
     const base = this._state.players.get('player')?.base;
     if (!base) return;
     if (!base.unlocked.has(unit)) return;
+    if (unit === 'sentinel' && !canAddWall(base) && base.wallQueue.length === 0) return; // walls maxed
     const q = this._queueFor(base, unit);
     const tail = q[q.length - 1];
     if (tail && tail.type === unit) tail.count++;

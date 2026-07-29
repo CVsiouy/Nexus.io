@@ -1,5 +1,5 @@
 import { dist2 } from '../../utils/helpers.js';
-import { MIN_ZOOM, MAX_ZOOM, MINE_NODE_RADIUS } from '../constants.js';
+import { MIN_ZOOM, MAX_ZOOM, WORLD_SIZE, CENTER_RADIUS, MINE_NODE_RADIUS, BASE_DEFENSE_RADIUS } from '../constants.js';
 import {
   moveGroup, attackWithGroup, setDefending, setDefendNode,
   splitGroup, mergeGroup, balanceGroups,
@@ -24,10 +24,27 @@ export class InputSystem {
     this._wc    = worldContainer;
     this._cam   = camera;
     this._state = state;
+    this._keys  = {}; // held keys for WASD/arrow panning
     this._bindEvents();
   }
 
-  update(dt) { /* camera follow handled in Game loop */ }
+  // WASD / arrow keys pan the map (switches to free look so it doesn't snap back).
+  update(dt) {
+    const cam = this._cam;
+    let mx = 0, my = 0;
+    const k = this._keys;
+    if (k['KeyW'] || k['ArrowUp'])    my -= 1;
+    if (k['KeyS'] || k['ArrowDown'])  my += 1;
+    if (k['KeyA'] || k['ArrowLeft'])  mx -= 1;
+    if (k['KeyD'] || k['ArrowRight']) mx += 1;
+    if (mx === 0 && my === 0) return;
+    if (mx && my) { const inv = 1 / Math.sqrt(2); mx *= inv; my *= inv; }
+    const pan = 600 * dt; // world px/sec (gentle, fixed — zoom is fixed too)
+    cam.focusType = 'free';
+    cam.focusId   = null;
+    cam.x = Math.max(0, Math.min(WORLD_SIZE, cam.x + mx * pan));
+    cam.y = Math.max(0, Math.min(WORLD_SIZE, cam.y + my * pan));
+  }
 
   // ── Focus control ────────────────────────────────────────────────────────
   focusBase() {
@@ -43,6 +60,14 @@ export class InputSystem {
     this._cam.focusId   = g.id;
   }
 
+  /** Deselect the current squad and stop the camera following it — but stay put. */
+  _unselect() {
+    this._deselectAll();
+    this._cam.focusType = 'free';
+    this._cam.focusId   = null;
+    // NOTE: deliberately does NOT recentre — the view stays where it is.
+  }
+
   /** Whole-map overview from the centre (the default view). */
   focusFree() {
     this._deselectAll();
@@ -51,7 +76,7 @@ export class InputSystem {
     cam.focusId   = null;
     cam.x = WORLD_SIZE / 2;
     cam.y = WORLD_SIZE / 2;
-    cam.zoom = Math.max(MIN_ZOOM, Math.min(cam.width / WORLD_SIZE, cam.height / WORLD_SIZE) * 0.95);
+    cam.zoom = (cam.width / WORLD_SIZE) * 0.98; // fixed wide view — whole map width
   }
 
   cycleFocus() {
@@ -82,6 +107,7 @@ export class InputSystem {
     canvas.addEventListener('contextmenu', e => e.preventDefault());
 
     window.addEventListener('keydown', e => {
+      this._keys[e.code] = true;
       switch (e.code) {
         case 'Space': e.preventDefault(); this.focusBase(); break;   // snap to mother base
         case 'Tab':   e.preventDefault(); this.cycleFocus(); break;  // cycles … → squads → overview
@@ -89,9 +115,11 @@ export class InputSystem {
         case 'Escape': this._deselectAll(); break;
       }
     });
+    window.addEventListener('keyup', e => { this._keys[e.code] = false; });
   }
 
   _onMouseDown(e) {
+    if (e.button === 2) { this._unselect(); return; } // right-click = just unselect (camera stays)
     if (e.button !== 0) return; // only left-click issues orders
     const state = this._state;
     const wp    = this._screenToWorld(e.clientX, e.clientY);
@@ -131,9 +159,7 @@ export class InputSystem {
   }
 
   _onWheel(e) {
-    e.preventDefault();
-    const factor = e.deltaY > 0 ? 0.9 : 1.11;
-    this._cam.zoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, this._cam.zoom * factor));
+    e.preventDefault(); // zoom disabled — the view is a fixed wide overview
   }
 
   // ── Group operations ─────────────────────────────────────────────────────
@@ -192,17 +218,19 @@ export class InputSystem {
 
   _hitEnemy(state, wp) {
     const me = state.playerId;
-    // Enemy soldier (not a teammate)
+    // 1. Enemy base FIRST — clicking anywhere inside a base's defense ring targets
+    //    the base itself; soldiers milling around it never steal the click.
+    const ring2 = BASE_DEFENSE_RADIUS * BASE_DEFENSE_RADIUS;
+    for (const [, p] of state.players) {
+      if (!p.alive || !state.areEnemies(me, p.id)) continue;
+      if (dist2(p.base.position, wp) < ring2) return p.base;
+    }
+    // 2. Otherwise an enemy soldier out in the open.
     for (const [, s] of state.soldiers) {
       if (s.hp <= 0 || !state.areEnemies(me, s.ownerId)) continue;
       if (dist2(s.position, wp) < 16 * 16) return s;
     }
-    // Enemy base (not a teammate)
-    for (const [, p] of state.players) {
-      if (!p.alive || !state.areEnemies(me, p.id)) continue;
-      if (dist2(p.base.position, wp) < 46 * 46) return p.base;
-    }
-    // Boss
+    // 3. Boss.
     if (state.boss && dist2(state.boss.position, wp) < 45 * 45) return state.boss;
     return null;
   }

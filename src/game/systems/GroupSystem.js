@@ -3,6 +3,7 @@ import { Group } from '../entities.js';
 import {
   FORMATION_SPACING, GROUP_MERGE_RANGE, GROUP_ARRIVE, GROUP_MAX_SIZE,
   BASE_RADIUS, BOSS_RADIUS, SOLDIER_RADIUS, WORLD_SIZE,
+  ATTACK_RANGE, WALL_CELL_SIZE, BASE_DEFENSE_RADIUS,
 } from '../constants.js';
 import { outerBlockingLayer, nearestCell } from '../walls.js';
 
@@ -38,6 +39,7 @@ function spdMult(player) { return 1 + (player?.buffs?.spd ?? 0) * 0.10; }
 export class GroupSystem {
   update(state, dt, dtMs) {
     this._updateGroups(state, dt);
+    this._enforceWalls(state);
     this._cull(state);
   }
 
@@ -57,14 +59,17 @@ export class GroupSystem {
         if (!target || target.hp <= 0) {
           this._release(state, g, members);                                 // objective gone
         } else {
-          // Advance onto the target — but if it's a base still ringed by intact
-          // walls, press the nearest OUTER wall cell (from outside) to breach it.
+          // Assault priority for a base: outer WALL cell → its DEFENDERS → the base.
           let ax = target.position.x, ay = target.position.y;
           if (state.bases.has(target.id)) {
+            const cen0 = this._centroid(members);
             const layer = outerBlockingLayer(target);
             if (layer) {
-              const near = nearestCell(target, layer, this._centroid(members));
+              const near = nearestCell(target, layer, cen0);            // breach the wall first
               if (near) { ax = near.pos.x; ay = near.pos.y; }
+            } else {
+              const def = this._nearestDefender(state, target, cen0);   // then hunt its defenders
+              if (def) { ax = def.position.x; ay = def.position.y; }     // else the base itself
             }
           }
           g.anchor = { x: ax, y: ay };
@@ -86,23 +91,96 @@ export class GroupSystem {
       const ax = g.anchor.x - cen.x, ay = g.anchor.y - cen.y;
       if (g.status === 'moving' && ax * ax + ay * ay <= GROUP_ARRIVE * GROUP_ARRIVE) g.status = 'idle';
 
-      // ── Steer each member toward its fixed wedge slot; clamp to the map ─
+      // Defending squads INTERCEPT: if enemies have entered the guarded area,
+      // each soldier peels off to its nearest intruder; otherwise it re-forms.
+      // Every OTHER status (moving / attacking) holds the RIGID wedge — the
+      // formation never breaks apart; combat (skirmish/assault) fires from the
+      // in-range soldiers WITHOUT moving them, so the triangle stays clean.
+      let threats = null;
+      if (g.status === 'defending') {
+        const r2 = BASE_DEFENSE_RADIUS * BASE_DEFENSE_RADIUS;
+        threats = [];
+        for (const [, e] of state.soldiers) {
+          if (e.hp <= 0 || !state.areEnemies(g.ownerId, e.ownerId)) continue;
+          if (dist2(e.position, g.anchor) < r2) threats.push(e);
+        }
+      }
+
+      // ── Steer each member ───────────────────────────────────────────────
       for (let i = 0; i < members.length; i++) {
         const sol = members[i];
         sol.slot  = i;
-        const slotPos = this._slotPos(g, i);
-        const dx = slotPos.x - sol.position.x;
-        const dy = slotPos.y - sol.position.y;
-        const d2 = dx * dx + dy * dy;
-        if (d2 > 4) {
-          const len   = Math.sqrt(d2);
-          const step  = Math.min(sol.speed * spdMult(player) * dt, len);
-          sol.position.x += (dx / len) * step;
-          sol.position.y += (dy / len) * step;
+
+        let tx, ty;
+        if (threats && threats.length) {
+          // intercept the nearest intruder (defending only)
+          let best = null, bd = Infinity;
+          for (const e of threats) { const d = dist2(sol.position, e.position); if (d < bd) { bd = d; best = e; } }
+          tx = best.position.x; ty = best.position.y;
+        } else {
+          const slot = this._slotPos(g, i);   // rigid wedge slot
+          tx = slot.x; ty = slot.y;
+        }
+
+        {
+          const dx = tx - sol.position.x, dy = ty - sol.position.y;
+          const d2 = dx * dx + dy * dy;
+          if (d2 > 4) {
+            const len  = Math.sqrt(d2);
+            const step = Math.min(sol.speed * spdMult(player) * dt, len);
+            sol.position.x += (dx / len) * step;
+            sol.position.y += (dy / len) * step;
+          }
         }
         sol.facing = g.facing; // fixed (apex up); soldiers never rotate on their axis
         sol.position.x = Math.max(0, Math.min(WORLD_SIZE, sol.position.x));
         sol.position.y = Math.max(0, Math.min(WORLD_SIZE, sol.position.y));
+      }
+    }
+  }
+
+  /** Nearest soldier defending `base` (within its ring), closest to `from`. */
+  _nearestDefender(state, base, from) {
+    const r2 = BASE_DEFENSE_RADIUS * BASE_DEFENSE_RADIUS;
+    let best = null, bd = Infinity;
+    for (const [, s] of state.soldiers) {
+      if (s.hp <= 0 || s.ownerId !== base.ownerId) continue;
+      if (dist2(s.position, base.position) > r2) continue;
+      const d = dist2(s.position, from);
+      if (d < bd) { bd = d; best = s; }
+    }
+    return best;
+  }
+
+  /** Is there an enemy soldier within r² of this soldier? */
+  _enemySoldierInRange(state, sol, r2) {
+    for (const [, e] of state.soldiers) {
+      if (e.hp <= 0 || !state.areEnemies(sol.ownerId, e.ownerId)) continue;
+      if (dist2(sol.position, e.position) <= r2) return true;
+    }
+    return false;
+  }
+
+  /**
+   * Wall collision: an enemy soldier cannot cross a base's outermost COMPLETE
+   * wall ring — it's pushed back to just outside until that ring is breached.
+   * (Own soldiers pass freely.)
+   */
+  _enforceWalls(state) {
+    for (const [, b] of state.bases) {
+      const layer = outerBlockingLayer(b);
+      if (!layer) continue;
+      const R = layer.radius + WALL_CELL_SIZE * 0.6;
+      const R2 = R * R;
+      for (const [, s] of state.soldiers) {
+        if (s.hp <= 0 || !state.areEnemies(s.ownerId, b.ownerId)) continue;
+        const dx = s.position.x - b.position.x, dy = s.position.y - b.position.y;
+        const d2 = dx * dx + dy * dy;
+        if (d2 < R2 && d2 > 1) {
+          const d = Math.sqrt(d2);
+          s.position.x = b.position.x + (dx / d) * R;
+          s.position.y = b.position.y + (dy / d) * R;
+        }
       }
     }
   }

@@ -15,6 +15,9 @@ export const BOT_THINK_RATE   = 2000;
 // ─── HP ──────────────────────────────────────────────────────────────────────
 export const BASE_HP          = 10000; // mother base is a fortress (all modes)
 export const BOSS_HP          = 5000;
+// Mother base slowly heals if it hasn't been hit for a while.
+export const BASE_HP_REGEN_DELAY = 20000; // ms of calm before the base heals
+export const BASE_HP_REGEN_RATE  = 220;   // HP/sec healed
 
 // ─── Ranges ──────────────────────────────────────────────────────────────────
 export const ATTACK_RANGE     = 32;
@@ -29,7 +32,7 @@ export const ATTACK_RANGE     = 32;
 export const SOLDIER_DEFS = {
   grunt:    { hp: 20, damage: 4,  speed: 80,  autoR: 130, color: 0xffffff, xpGain: 2, unlockLv: 1,  pop: 1, cost: 25,  spawnMs: 2500 },
   // 'sentinel' is the DEFENDER (a static wall cell — see walls.js). Available from the start.
-  sentinel: { hp: 45, damage: 6,  speed: 96,  autoR: 210, color: 0x3b82f6, xpGain: 3, unlockLv: 1,  pop: 2, cost: 70,  spawnMs: 3000, defBonus: 1.5 },
+  sentinel: { hp: 45, damage: 6,  speed: 96,  autoR: 210, color: 0x3b82f6, xpGain: 3, unlockLv: 1,  pop: 2, cost: 40,  spawnMs: 3000, defBonus: 1.5 },
   saboteur: { hp: 15, damage: 3,  speed: 108, autoR: 90,  color: 0x1a1a1a, xpGain: 3, unlockLv: 8,  pop: 2, cost: 60,  spawnMs: 4500, structMult: 2 },
   vanguard: { hp: 50, damage: 9,  speed: 80,  autoR: 160, color: 0xfbbf24, xpGain: 6, unlockLv: 20, pop: 4, cost: 180, spawnMs: 8000 },
 };
@@ -58,6 +61,7 @@ export const WALL_LAYER_GAP     = 30;   // distance between successive wall laye
 export const WALL_CELLS_BASE    = 10;   // cell capacity of the innermost ring
 export const WALL_CELLS_PER_LAYER = 3;  // extra capacity per outer ring
 export const WALL_CELL_SIZE     = 12;   // radius of a rendered hexagonal wall cell
+export const MAX_WALL_LAYERS    = 3;    // at most this many wall rings around a base
 // Walls auto-repair a fixed rate once they've gone this long without being hit.
 export const WALL_REPAIR_DELAY  = 10000; // ms of calm before repair begins
 export const WALL_REPAIR_RATE   = 260;   // HP/sec repaired per cell (up to its max)
@@ -124,7 +128,7 @@ export const LEVELS = [
   { lv:4,  xp:300 },
   { lv:5,  xp:500 },
   { lv:6,  xp:800 },
-  { lv:7,  xp:1200 },
+  { lv:7,  xp:1200, spec:true },   // specialization upgrade (moved earlier from 15)
   { lv:8,  xp:1800, unlock:'saboteur' },
   { lv:9,  xp:2600 },
   { lv:10, xp:3600 },
@@ -132,7 +136,7 @@ export const LEVELS = [
   { lv:12, xp:7000 },
   { lv:13, xp:9500 },
   { lv:14, xp:13000 },
-  { lv:15, xp:17000, spec:true },
+  { lv:15, xp:17000 },
   { lv:16, xp:22000 },
   { lv:17, xp:28000 },
   { lv:18, xp:35000 },

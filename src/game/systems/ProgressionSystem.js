@@ -2,6 +2,7 @@ import {
   LEVELS, BOSS_INTERVAL, SKILL_PTS_PER_LEVEL,
   GOLD_PER_SEC, GOLD_PER_LEVEL, XP_PER_SEC, WORLD_SIZE,
   MINE_UPGRADE_BASE_COST, MINE_UPGRADE_GROWTH, MINE_BONUS_STEP, MAX_MINE_LEVEL,
+  BASE_HP_REGEN_DELAY, BASE_HP_REGEN_RATE,
 } from '../constants.js';
 import { Boss } from '../entities.js';
 import { randPick } from '../../utils/helpers.js';
@@ -41,8 +42,21 @@ export class ProgressionSystem {
 
   update(state, dtMs) {
     this._mineAndTrickle(state, dtMs);
+    this._regenBases(state, dtMs);
     this._awardXP(state);
     this._checkBoss(state, dtMs);
+  }
+
+  // Mother base heals once it hasn't been hit for BASE_HP_REGEN_DELAY.
+  _regenBases(state, dtMs) {
+    const dt = dtMs / 1000;
+    for (const [, player] of state.players) {
+      if (!player.alive) continue;
+      const b = player.base;
+      if (b.hp >= b.maxHp) continue;
+      if (state.time - (b.lastAttackedAt ?? -Infinity) < BASE_HP_REGEN_DELAY) continue;
+      b.hp = Math.min(b.maxHp, b.hp + BASE_HP_REGEN_RATE * dt);
+    }
   }
 
   // ── Passive gold mining + XP trickle ────────────────────────────────────────
