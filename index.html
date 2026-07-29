@@ -79,11 +79,12 @@
     #level-bar .panel-handle .level-num { font-family: 'Rajdhani', sans-serif; font-size: 22px; font-weight: 700; color: #1a2a40; line-height: 1; }
     #level-bar .panel-handle .handle-title { color: #7b8fa1; }
 
-    /* ─── Level Bar (top-left) ─── */
+    /* ─── Base info bar (bottom-right, compact, collapsible) ─── */
     #level-bar {
-      position: absolute; top: 14px; left: 14px;
-      min-width: 210px; padding: 12px 16px;
+      position: absolute; bottom: 14px; right: 14px;
+      min-width: 180px; padding: 10px 14px;
     }
+    #level-bar.collapsed { min-width: 0 !important; }
     #level-bar .player-label {
       font-family: 'Rajdhani', sans-serif;
       font-size: 10px; font-weight: 600;
@@ -269,9 +270,9 @@
     }
     #rally-btn:hover kbd { background: #fff; }
 
-    /* Skill / buffs panel (left, below level bar) */
+    /* Skill / buffs panel (top-left) */
     #skill-panel {
-      position: absolute; top: 190px; left: 14px;
+      position: absolute; top: 14px; left: 14px;
       padding: 10px 12px; min-width: 150px;
     }
     #skill-panel .sk-title {
@@ -554,11 +555,13 @@
     #gold-row .g-lbl { font-size: 10px; color: #7b8fa1; font-weight: 600; letter-spacing: 1px; }
     #gold-row .g-rate { margin-left: auto; font-size: 11px; color: #16a34a; font-weight: 700; font-family: 'Rajdhani', sans-serif; }
 
-    /* ─── Group / squad panel (left, below the Buffs panel) ─── */
+    /* ─── Group / squad panel (top-left, right below the Buffs panel) ─── */
     #group-panel {
-      position: absolute; top: 340px; left: 14px;
-      padding: 10px 10px; min-width: 92px; max-height: 50vh; overflow-y: auto;
+      position: absolute; top: 96px; left: 14px;
+      padding: 10px 10px; min-width: 92px; max-height: 62vh; overflow-y: auto;
     }
+    /* Minimap (Map) panel hidden for now. */
+    #minimap-wrap { display: none !important; }
     #group-panel .gp-title {
       font-family: 'Rajdhani', sans-serif; font-size: 9px; font-weight: 700;
       letter-spacing: 2px; text-transform: uppercase; color: #7b8fa1;
@@ -575,6 +578,8 @@
     .group-entry:hover { background: rgba(255,255,255,0.8); border-color: #cfe0ef; }
     .group-entry.sel { border-color: #0077cc; background: #eaf5ff; }
     .group-entry.locked { opacity: 0.85; }
+    .group-entry.ready { border-color: #16a34a; box-shadow: 0 0 0 2px rgba(22,163,74,0.25); }
+    .group-entry.ready .g-count { color: #16a34a; }
     .group-entry .g-count {
       font-family: 'Rajdhani', sans-serif; font-size: 30px; font-weight: 700;
       line-height: 1; color: rgba(26,42,64,0.55);
@@ -651,7 +656,7 @@
   <div id="hud">
 
     <!-- Level + Stats bar (top-left) -->
-    <div id="level-bar" class="panel collapsible" data-hotkey="">
+    <div id="level-bar" class="panel collapsible collapsed" data-hotkey="">
       <div class="panel-handle">
         <span class="level-num" id="hud-lvl">1</span>
         <span class="handle-title">Base</span>
@@ -719,14 +724,11 @@
           <span class="key-badge"><kbd>Click enemy</kbd> Attack (locks)</span>
         </div>
         <div class="ctrl-row">
-          <span class="key-badge"><kbd>Tab</kbd> Cycle squads</span>
-          <span class="key-badge"><kbd>Space</kbd> Focus base</span>
-          <span class="key-badge"><kbd>Click centre</kbd> Farm XP</span>
+          <span class="key-badge"><kbd>Space</kbd> Snap to base</span>
+          <span class="key-badge"><kbd>Tab</kbd> Cycle squads / overview</span>
+          <span class="key-badge"><kbd>Scroll</kbd> Zoom</span>
         </div>
         <div class="ctrl-row">
-          <span class="key-badge"><kbd>X</kbd> Split</span>
-          <span class="key-badge"><kbd>C</kbd> Merge</span>
-          <span class="key-badge"><kbd>V</kbd> Balance</span>
           <span class="key-badge"><kbd>F</kbd> Defend base</span>
           <span class="key-badge"><kbd>B</kbd> Buffs</span>
         </div>
@@ -748,9 +750,6 @@
 
     <!-- Squad command bar (above build panel) -->
     <div id="cmd-bar" class="panel">
-      <button class="cmd-btn" id="cmd-split"   title="Split the selected squad into two"><span class="c-icon">✂️</span><span class="c-name">Split</span><span class="c-key">X</span></button>
-      <button class="cmd-btn" id="cmd-merge"   title="Merge the selected squad with a nearby squad"><span class="c-icon">🔗</span><span class="c-name">Merge</span><span class="c-key">C</span></button>
-      <button class="cmd-btn" id="cmd-balance" title="Even out all squads"><span class="c-icon">⚖️</span><span class="c-name">Balance</span><span class="c-key">V</span></button>
       <button class="cmd-btn" id="cmd-defend"  title="Send the selected squad to defend the mother base"><span class="c-icon">🛡️</span><span class="c-name">Defend</span><span class="c-key">F</span></button>
       <button class="cmd-btn" id="cmd-base"    title="Focus camera on your mother base"><span class="c-icon">🏠</span><span class="c-name">Base</span><span class="c-key">Spc</span></button>
       <button class="cmd-btn" id="cmd-donate"  title="Donate up to 5 soldiers to a teammate (Team mode)" style="display:none"><span class="c-icon">🤝</span><span class="c-name">Donate</span><span class="c-key">D</span></button>
@@ -844,7 +843,7 @@
       <div class="how-rules">
         Your <strong>mother base mines gold</strong> automatically. Spend it in the Build bar on
         <strong>turrets</strong> (auto-defend your base) or <strong>soldiers</strong> (attack rivals).<br>
-        Soldiers always move as a <strong>squad in formation</strong>. Split, merge and balance squads to manage them.<br>
+        Soldiers always move as a <strong>squad in formation</strong>. A squad must be a <strong>full formation of 15</strong> before you can move it or send it to attack — the left panel shows <strong>READY ▶</strong> when it is.<br>
         A squad sent to <strong>attack is committed</strong> — you can't recall it until its target falls or it's wiped out.<br>
         You only see around your base or your selected squad. <strong>Destroy every rival mother base to win.</strong>
       </div>

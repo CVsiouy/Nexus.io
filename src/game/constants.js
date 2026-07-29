@@ -13,7 +13,7 @@ export const SPAWN_PROTECT    = 20000;
 export const BOT_THINK_RATE   = 2000;
 
 // ─── HP ──────────────────────────────────────────────────────────────────────
-export const BASE_HP          = 5000;  // mother base is very tough now
+export const BASE_HP          = 10000; // mother base is a fortress (all modes)
 export const BOSS_HP          = 5000;
 
 // ─── Ranges ──────────────────────────────────────────────────────────────────
@@ -39,6 +39,9 @@ export const SOLDIER_DEFS = {
 export const BASE_RADIUS    = 44;
 export const BOSS_RADIUS    = 40;
 export const SOLDIER_RADIUS = 10;
+// Muster/defense ring around a mother base (~3× its size). Soldiers stationed
+// inside it shield the base: enemies must kill them before they can hit the base.
+export const BASE_DEFENSE_RADIUS = 160;
 export const SURROUND_GAP   = 18;  // squad forms a ring this far outside the target
 // Soldiers hit far harder against a mother base (siege), so a slow one-at-a-time
 // assault still brings a base down in a reasonable time.
@@ -99,6 +102,7 @@ export const POP_PER_LEVEL  = 10;   // extra budget per base level
 export const FORMATION_SPACING = 22;   // px between soldiers in a wedge/triangle
 export const GROUP_MERGE_RANGE = 90;   // two groups this close can merge
 export const GROUP_ARRIVE      = 18;   // group counts as "arrived" within this of anchor
+export const GROUP_MAX_SIZE    = 15;   // a squad can hold at most this many soldiers
 
 // ─── Defense (no formation — soldiers orbit the base & engage independently) ────
 export const DEFENSE_RADIUS  = 280;    // enemies within this of the base are engaged by defenders
@@ -106,11 +110,11 @@ export const ORBIT_RADIUS    = 74;     // radius defenders circle the base at wh
 export const ORBIT_SPEED     = 0.0016; // radians/ms the defensive ring rotates
 
 // ─── Camera / visibility ────────────────────────────────────────────────────────
-// Tight fixed zoom = you only see a small slice of the map. The camera focuses on
-// EITHER the mother base OR one selected formation — never free-roams.
-export const MIN_ZOOM  = 1.4;
+// Zoom is unlocked: the player can scroll all the way out to see the whole map,
+// or zoom right in. DEF_ZOOM is the starting (base-focused) zoom.
+export const MIN_ZOOM  = 0.2;   // fully out → entire map fits on screen
 export const MAX_ZOOM  = 2.6;
-export const DEF_ZOOM  = 1.9;
+export const DEF_ZOOM  = 1.6;
 
 // ─── Level table ─────────────────────────────────────────────────────────────
 export const LEVELS = [
@@ -169,7 +173,9 @@ export const MINE_NODE_COUNT     = 9;    // total nodes on the map
 export const MINE_NODE_RADIUS    = 26;   // node body radius (also the capture ring)
 export const MINE_CAPTURE_RANGE  = 90;   // soldiers within this of a node contest it
 export const MINE_CAPTURE_TIME   = 4000; // ms for 1 soldier to flip a node (more = faster)
-export const MINE_NODE_GOLD      = 4;    // gold/sec a captured node adds to its owner
+export const MINE_NODE_GOLD      = 4;    // base gold/sec a captured node adds to its owner
+export const MINE_NODE_GOLD_PER_SOLDIER = 0.8; // extra gold/sec per soldier stationed on it
+export const MINE_STATION_CAP    = 12;   // soldiers beyond this don't add more gold
 export const MINE_NODE_SPAWN_MS  = 9000; // a held node grows a grunt this often
 export const MINE_NODE_MIN_SEP   = 360;  // min spacing between nodes / from bases
 

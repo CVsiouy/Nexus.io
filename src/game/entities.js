@@ -83,11 +83,13 @@ export class Group {
     this.status    = 'idle';
     this.targetId  = null;            // base/soldier/boss id when attacking
     this.anchor    = { x, y };        // formation centre the members steer toward
-    this.facing    = 0;               // formation heading (radians)
+    this.facing    = -Math.PI / 2;    // FIXED heading (apex up) — formations never rotate/spin
     this.selected  = false;
     this.locked    = false;           // true while committed to an attack
     this.attackToken = null;          // soldier id currently allowed to strike (one-at-a-time)
     this.attackCd    = 0;             // ms pacing between the squad's turn-taking strikes
+    this.defendNodeId = null;         // if set, this squad orbits/defends a mining node instead of the base
+    this.formed      = false;         // true once it has reached a full 15 — then deployable even below 15
   }
 }
 
@@ -168,6 +170,7 @@ export class MineNode {
     this.capturingBy  = null;   // owner id currently making capture progress
     this.captureProg  = 0;      // 0..1
     this.spawnTimer   = 0;      // ms toward growing a defender
+    this.goldRate     = 0;      // current gold/sec (scales with garrison)
     this.rot          = Math.random() * Math.PI * 2;
   }
 }

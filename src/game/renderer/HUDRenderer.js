@@ -131,12 +131,14 @@ export class HUDRenderer {
       return;
     }
 
-    this._groupList.innerHTML = groups.map(g => `
-      <div class="group-entry ${g.selected ? 'sel' : ''} ${g.locked ? 'locked' : ''}" data-id="${g.id}">
-        <span class="g-count">${g.memberIds.length}</span>
-        <span class="g-status" style="color:${STATUS_COLOR[g.status]}">${STATUS_LABEL[g.status]}${g.locked ? ' 🔒' : ''}</span>
-      </div>
-    `).join('');
+    this._groupList.innerHTML = groups.map(g => {
+      const ready = g.memberIds.length >= 15 && !g.locked;
+      return `
+      <div class="group-entry ${g.selected ? 'sel' : ''} ${g.locked ? 'locked' : ''} ${ready ? 'ready' : ''}" data-id="${g.id}">
+        <span class="g-count">${g.memberIds.length}/15</span>
+        <span class="g-status" style="color:${STATUS_COLOR[g.status]}">${g.locked ? 'ATTACKING 🔒' : ready ? 'READY ▶' : STATUS_LABEL[g.status]}</span>
+      </div>`;
+    }).join('');
 
     for (const el of this._groupList.querySelectorAll('.group-entry')) {
       el.addEventListener('click', () => {
@@ -238,8 +240,7 @@ export class HUDRenderer {
         isMe: player.id === state.playerId,
         color: player.color,
         name: player.id === state.playerId ? 'YOU' : player.id.replace('bot_', 'Bot '),
-        score: player.base.level * 5 + state.soldierCount(player.id),
-        lvl: player.base.level,
+        score: Math.floor(player.base.xpEarned), // rank by XP earned
       });
     }
     entries.sort((a, b) => b.score - a.score);
@@ -247,12 +248,13 @@ export class HUDRenderer {
     if (hash === this._prevLbHash) return;
     this._prevLbHash = hash;
 
+    const fmt = (n) => n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n);
     this._lbEntries.innerHTML = entries.slice(0, 10).map((e, i) => `
       <div class="lb-entry ${e.isMe ? 'is-player' : ''}">
         <span class="lb-rank">${i + 1}</span>
         <span class="lb-dot" style="background:${hexToCSS(e.color)}"></span>
         <span class="lb-name">${e.name}</span>
-        <span class="lb-score">Lv${e.lvl}</span>
+        <span class="lb-score">${fmt(e.score)} XP</span>
       </div>
     `).join('');
   }
@@ -268,28 +270,13 @@ export class HUDRenderer {
     ctx.fillStyle = '#08081a';
     ctx.fillRect(0, 0, W, H);
 
-    if (state.mode === 'mining') {
-      // Mining nodes (owner-coloured, grey if neutral).
-      for (const [, node] of state.mineNodes) {
-        const owner = node.ownerId ? state.players.get(node.ownerId) : null;
-        ctx.fillStyle = owner ? hexToCSS(owner.color) : '#9aa5b1';
-        ctx.beginPath();
-        ctx.arc(node.position.x * scale, node.position.y * scale, 2.5, 0, Math.PI * 2);
-        ctx.fill();
-      }
-    } else {
-      // Neutral centre hunting ground + wildlings.
-      ctx.strokeStyle = 'rgba(196,181,160,0.5)';
-      ctx.lineWidth = 1;
+    // Mining nodes (owner-coloured, grey if neutral).
+    for (const [, node] of state.mineNodes) {
+      const owner = node.ownerId ? state.players.get(node.ownerId) : null;
+      ctx.fillStyle = owner ? hexToCSS(owner.color) : '#9aa5b1';
       ctx.beginPath();
-      ctx.arc((WORLD_SIZE / 2) * scale, (WORLD_SIZE / 2) * scale, CENTER_RADIUS * scale, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.fillStyle = '#a78bfa';
-      for (const [, w] of state.wildlings) {
-        ctx.beginPath();
-        ctx.arc(w.position.x * scale, w.position.y * scale, 1.5, 0, Math.PI * 2);
-        ctx.fill();
-      }
+      ctx.arc(node.position.x * scale, node.position.y * scale, 2.5, 0, Math.PI * 2);
+      ctx.fill();
     }
 
     // Boss is announced to everyone.

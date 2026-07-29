@@ -13,7 +13,7 @@ import { ProgressionSystem } from './systems/ProgressionSystem.js';
 import { GameRenderer }      from './renderer/GameRenderer.js';
 import { HUDRenderer }       from './renderer/HUDRenderer.js';
 import { buyMineUpgrade }    from './systems/ProgressionSystem.js';
-import { DEF_ZOOM, WORLD_SIZE, SOLDIER_DEFS, TURRET_DEFS, MAX_TURRETS_PER_BASE } from './constants.js';
+import { DEF_ZOOM, MIN_ZOOM, WORLD_SIZE, SOLDIER_DEFS, TURRET_DEFS, MAX_TURRETS_PER_BASE } from './constants.js';
 
 export class Game {
   constructor() {
@@ -121,9 +121,6 @@ export class Game {
     });
 
     // Squad command buttons (mirror the keyboard shortcuts)
-    this._wireBtn('cmd-split',   () => this._input._doSplit());
-    this._wireBtn('cmd-merge',   () => this._input._doMerge());
-    this._wireBtn('cmd-balance', () => this._input._doBalance());
     this._wireBtn('cmd-defend',  () => this._input._doDefend());
     this._wireBtn('cmd-base',    () => this._input.focusBase());
     this._wireBtn('cmd-donate',  () => this._donate());
@@ -162,9 +159,13 @@ export class Game {
     const donate = document.getElementById('cmd-donate');
     if (donate) donate.style.display = mode === 'team' ? 'flex' : 'none';
 
-    // Focus the player's base.
-    const playerBase = this._state.players.get('player')?.base;
-    if (playerBase) { this._camera.x = playerBase.position.x; this._camera.y = playerBase.position.y; }
+    // Default view: the whole map, from the centre (not following the base).
+    const cam = this._camera;
+    cam.focusType = 'free';
+    cam.focusId   = null;
+    cam.x = WORLD_SIZE / 2;
+    cam.y = WORLD_SIZE / 2;
+    cam.zoom = Math.max(MIN_ZOOM, Math.min(cam.width / WORLD_SIZE, cam.height / WORLD_SIZE) * 0.95);
 
     this.start();
   }
@@ -221,6 +222,7 @@ export class Game {
   /** Camera focuses on either the base or one squad — never free-roams. */
   _updateCamera() {
     const cam = this._camera;
+    if (cam.focusType === 'free') return; // whole-map overview — stays put, user zooms
     let target = null;
     if (cam.focusType === 'group' && cam.focusId) {
       const g = this._state.groups.get(cam.focusId);

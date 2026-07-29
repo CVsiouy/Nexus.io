@@ -36,10 +36,9 @@ export function spawnEatable(state) {
  */
 export class CenterSystem {
   update(state, dt, dtMs) {
-    if (state.mode === 'mining') return; // mining mode uses capturable nodes, not the centre
-    this._respawnEatables(state, dtMs);
-    this._spawnWildlings(state, dtMs);
-    this._updateWildlings(state, dt, dtMs);
+    // Centre eatables + wildlings are removed from all modes. Kept dormant here
+    // (spawn/update helpers below) in case we want a hunting ground back later.
+    return;
   }
 
   _respawnEatables(state, dtMs) {

@@ -1,5 +1,5 @@
 import { dist2 } from '../../utils/helpers.js';
-import { BOT_THINK_RATE, SOLDIER_DEFS, TURRET_DEFS } from '../constants.js';
+import { BOT_THINK_RATE, SOLDIER_DEFS, TURRET_DEFS, GROUP_MAX_SIZE } from '../constants.js';
 import { attackWithGroup, setDefending, moveGroup } from './GroupSystem.js';
 import { buyMineUpgrade, mineUpgradeCost } from './ProgressionSystem.js';
 
@@ -30,8 +30,7 @@ export class AISystem {
     this._economy(state, player, tier);
 
     // Squad size to commit an attack, by tier.
-    const attackAt = tier === 'aggressive' ? 4 : tier === 'standard' ? 6 : 9;
-
+    // Only FULL formations (15) can deploy — same rule as the player.
     const threat = this._threatNearBase(state, player);
     const groups = state.groupsOf(player.id).filter(g => !g.locked);
 
@@ -42,18 +41,16 @@ export class AISystem {
       return;
     }
 
-    // Mining mode: send free squads to grab the nearest node we don't own.
-    if (state.mode === 'mining') {
-      for (const g of groups) {
-        if (g.status === 'moving' || g.memberIds.length < 2) continue;
-        const node = this._nearestCapturableNode(state, player);
-        if (node && Math.random() < 0.6) { moveGroup(g, node.position.x, node.position.y); return; }
-      }
+    const ready = groups.filter(g => g.memberIds.length >= GROUP_MAX_SIZE && g.status !== 'moving');
+
+    // Mining mode: send a full squad to grab the nearest node we don't own.
+    if (state.mode === 'mining' && ready.length) {
+      const node = this._nearestCapturableNode(state, player);
+      if (node && Math.random() < 0.7) { moveGroup(ready[0], node.position.x, node.position.y); return; }
     }
 
-    // Commit any free squad that has reached attack strength.
-    for (const g of groups) {
-      if (g.memberIds.length < attackAt) continue;
+    // Commit any full free squad to the nearest enemy base.
+    for (const g of ready) {
       const target = this._nearestEnemyBase(state, player);
       if (target) attackWithGroup(g, target.id);
     }

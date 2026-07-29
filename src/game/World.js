@@ -1,8 +1,7 @@
 import { Base, Soldier, MineNode } from './entities.js';
 import { createGroup, setDefending } from './systems/GroupSystem.js';
-import { spawnEatable } from './systems/CenterSystem.js';
 import {
-  WORLD_SIZE, BOT_COUNT, BOT_COLORS, PLAYER_COLOR, EATABLE_TARGET, TEAM_TINTS,
+  WORLD_SIZE, BOT_COUNT, BOT_COLORS, PLAYER_COLOR, TEAM_TINTS,
   CENTER_RADIUS, MINE_NODE_COUNT, MINE_NODE_MIN_SEP,
 } from './constants.js';
 
@@ -55,12 +54,9 @@ export function buildWorld(state, mode = 'ffa') {
     }
   }
 
-  if (mode === 'mining') {
-    _placeMineNodes(state, cx, cy);
-  } else {
-    // Seed the neutral centre with XP eatables (FFA / Team).
-    for (let i = 0; i < EATABLE_TARGET; i++) spawnEatable(state);
-  }
+  // Mining mode scatters capturable gold nodes. No centre eatables/wildlings in
+  // any mode anymore.
+  if (mode === 'mining') _placeMineNodes(state, cx, cy);
 }
 
 /** Scatter neutral mining nodes across the map — outside the centre, spaced apart. */

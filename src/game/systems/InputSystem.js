@@ -1,7 +1,7 @@
 import { dist2 } from '../../utils/helpers.js';
-import { MIN_ZOOM, MAX_ZOOM, WORLD_SIZE, CENTER_RADIUS } from '../constants.js';
+import { MIN_ZOOM, MAX_ZOOM, MINE_NODE_RADIUS } from '../constants.js';
 import {
-  moveGroup, attackWithGroup, setDefending, setFarming,
+  moveGroup, attackWithGroup, setDefending, setDefendNode,
   splitGroup, mergeGroup, balanceGroups,
 } from './GroupSystem.js';
 
@@ -43,17 +43,29 @@ export class InputSystem {
     this._cam.focusId   = g.id;
   }
 
+  /** Whole-map overview from the centre (the default view). */
+  focusFree() {
+    this._deselectAll();
+    const cam = this._cam;
+    cam.focusType = 'free';
+    cam.focusId   = null;
+    cam.x = WORLD_SIZE / 2;
+    cam.y = WORLD_SIZE / 2;
+    cam.zoom = Math.max(MIN_ZOOM, Math.min(cam.width / WORLD_SIZE, cam.height / WORLD_SIZE) * 0.95);
+  }
+
   cycleFocus() {
     const groups = this._state.groupsOf(this._state.playerId);
-    // Order: base → g0 → g1 → … → base
+    // Order: overview → base → g0 → g1 → … → overview
+    if (this._cam.focusType === 'free') { this.focusBase(); return; }
     if (this._cam.focusType === 'base') {
-      if (groups[0]) this.focusGroup(groups[0]);
+      if (groups[0]) this.focusGroup(groups[0]); else this.focusFree();
       return;
     }
     const idx = groups.findIndex(g => g.id === this._cam.focusId);
     const next = groups[idx + 1];
     if (next) this.focusGroup(next);
-    else this.focusBase();
+    else this.focusFree();
   }
 
   selectedGroup() {
@@ -71,11 +83,8 @@ export class InputSystem {
 
     window.addEventListener('keydown', e => {
       switch (e.code) {
-        case 'Space': e.preventDefault(); this.focusBase(); break;
-        case 'Tab':   e.preventDefault(); this.cycleFocus(); break;
-        case 'KeyX':  this._doSplit(); break;
-        case 'KeyC':  this._doMerge(); break;
-        case 'KeyV':  this._doBalance(); break;
+        case 'Space': e.preventDefault(); this.focusBase(); break;   // snap to mother base
+        case 'Tab':   e.preventDefault(); this.cycleFocus(); break;  // cycles … → squads → overview
         case 'KeyF':  this._doDefend(); break;
         case 'Escape': this._deselectAll(); break;
       }
@@ -110,15 +119,14 @@ export class InputSystem {
       return;
     }
 
-    // 3. Click inside the neutral centre → farm eatables (FFA/Team only).
-    const cx = WORLD_SIZE / 2, cy = WORLD_SIZE / 2;
-    if (state.mode !== 'mining' && dist2(wp, { x: cx, y: cy }) < CENTER_RADIUS * CENTER_RADIUS) {
-      setFarming(sel, wp);
-      return;
+    // 3. Mining mode: click a node → garrison & orbit it (captures by presence,
+    //    then defends it like the mother base).
+    if (state.mode === 'mining') {
+      const node = this._hitMineNode(state, wp);
+      if (node) { setDefendNode(sel, node); return; }
     }
 
-    // 4. Click empty ground (or a mining node) → move there. Sitting on a node
-    //    captures it (MiningSystem handles capture by presence).
+    // 4. Click empty ground → move there.
     moveGroup(sel, wp.x, wp.y);
   }
 
@@ -197,5 +205,14 @@ export class InputSystem {
     // Boss
     if (state.boss && dist2(state.boss.position, wp) < 45 * 45) return state.boss;
     return null;
+  }
+
+  _hitMineNode(state, wp) {
+    let best = null, bestD2 = (MINE_NODE_RADIUS + 20) ** 2;
+    for (const [, n] of state.mineNodes) {
+      const d2 = dist2(n.position, wp);
+      if (d2 < bestD2) { bestD2 = d2; best = n; }
+    }
+    return best;
   }
 }

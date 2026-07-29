@@ -1,9 +1,8 @@
 import { dist, dist2 } from '../../utils/helpers.js';
 import { Group } from '../entities.js';
 import {
-  FORMATION_SPACING, GROUP_MERGE_RANGE, GROUP_ARRIVE,
-  BASE_RADIUS, BOSS_RADIUS, SOLDIER_RADIUS, SURROUND_GAP,
-  DEFENSE_RADIUS, ORBIT_RADIUS, ORBIT_SPEED,
+  FORMATION_SPACING, GROUP_MERGE_RANGE, GROUP_ARRIVE, GROUP_MAX_SIZE,
+  BASE_RADIUS, BOSS_RADIUS, SOLDIER_RADIUS, WORLD_SIZE,
 } from '../constants.js';
 import { outerBlockingLayer, nearestCell } from '../walls.js';
 
@@ -46,177 +45,74 @@ export class GroupSystem {
     for (const [, g] of state.groups) {
       const members = this._members(state, g);
       if (members.length === 0) continue;
+      if (members.length >= GROUP_MAX_SIZE) g.formed = true; // a real formation, forever after
 
       const player = state.players.get(g.ownerId);
 
-      // Defending squads don't hold formation — they orbit the base and each
-      // soldier peels off to hit its own nearest threat independently.
-      if (g.status === 'defending') { this._updateDefending(state, g, members, dt, player); continue; }
-
-      // Farming squads spread out over the centre, each hunting its nearest eatable.
-      if (g.status === 'farming') { this._updateFarming(state, g, members, dt, player); continue; }
-
-      // ── Resolve anchor goal by status ──────────────────────────────────
-      // For a structure assault we compute a "surround centre" + radius: the base
-      // itself (wide ring), or — if it still has walls — the nearest cell of the
-      // OUTERMOST intact wall layer, which the squad clusters on to breach it.
-      let surroundCenter = null, surroundR = 0;
+      // ── Resolve the formation anchor by status ─────────────────────────
+      // Every state holds the SAME triangular wedge — no orbiting, no surround
+      // ring. Only the anchor point differs.
       if (g.status === 'attacking') {
         const target = state.resolve(g.targetId);
         if (!target || target.hp <= 0) {
-          this._release(state, g, members);
+          this._release(state, g, members);                                 // objective gone
         } else {
-          g.anchor = { x: target.position.x, y: target.position.y };
-          if (isStructureTarget(state, target)) {
-            const cen0 = this._centroid(members);
-            const layer = state.bases.has(target.id) ? outerBlockingLayer(target) : null;
-            const near  = layer ? nearestCell(target, layer, cen0) : null;
-            if (near) {
-              surroundCenter = { x: near.pos.x, y: near.pos.y };
-              surroundR = 18; // cluster tight on the focused wall cell
-            } else {
-              surroundCenter = { x: target.position.x, y: target.position.y };
-              surroundR = targetRadius(state, target) + SURROUND_GAP;
+          // Advance onto the target — but if it's a base still ringed by intact
+          // walls, press the nearest OUTER wall cell (from outside) to breach it.
+          let ax = target.position.x, ay = target.position.y;
+          if (state.bases.has(target.id)) {
+            const layer = outerBlockingLayer(target);
+            if (layer) {
+              const near = nearestCell(target, layer, this._centroid(members));
+              if (near) { ax = near.pos.x; ay = near.pos.y; }
             }
-            g.anchor = { x: surroundCenter.x, y: surroundCenter.y };
           }
+          g.anchor = { x: ax, y: ay };
         }
+      } else if (g.status === 'defending') {
+        // Hold formation at what we guard: a mining node, else the mother base.
+        let cpos = player?.base?.position;
+        if (g.defendNodeId) {
+          const node = state.mineNodes.get(g.defendNodeId);
+          if (node) cpos = node.position; else g.defendNodeId = null;
+        }
+        if (cpos) g.anchor = { x: cpos.x, y: cpos.y };
       }
       // 'moving' | 'idle' keep whatever anchor was assigned.
 
-      // ── Facing: point the wedge from the group centroid toward the anchor ──
+      // The wedge keeps a FIXED heading (apex up) — no rotation ever. We only
+      // need the centroid→anchor distance to know when a 'moving' squad arrived.
       const cen = this._centroid(members);
       const ax = g.anchor.x - cen.x, ay = g.anchor.y - cen.y;
-      if (ax * ax + ay * ay > GROUP_ARRIVE * GROUP_ARRIVE) {
-        g.facing = Math.atan2(ay, ax);
-      }
+      if (g.status === 'moving' && ax * ax + ay * ay <= GROUP_ARRIVE * GROUP_ARRIVE) g.status = 'idle';
 
-      // A 'moving' group that has arrived settles to idle.
-      if (g.status === 'moving' && ax * ax + ay * ay <= GROUP_ARRIVE * GROUP_ARRIVE) {
-        g.status = 'idle';
-      }
-
-      // ── Steer each member toward its formation slot ─────────────────────
+      // ── Steer each member toward its fixed wedge slot; clamp to the map ─
       for (let i = 0; i < members.length; i++) {
         const sol = members[i];
         sol.slot  = i;
-        const slotPos = surroundCenter
-          ? this._ringPos(surroundCenter, i, members.length, surroundR)
-          : this._slotPos(g, i);
+        const slotPos = this._slotPos(g, i);
         const dx = slotPos.x - sol.position.x;
         const dy = slotPos.y - sol.position.y;
         const d2 = dx * dx + dy * dy;
         if (d2 > 4) {
           const len   = Math.sqrt(d2);
-          const speed = sol.speed * spdMult(player) * dt;
-          const step  = Math.min(speed, len);
+          const step  = Math.min(sol.speed * spdMult(player) * dt, len);
           sol.position.x += (dx / len) * step;
           sol.position.y += (dy / len) * step;
         }
-        if (surroundCenter) {
-          sol.facing = Math.atan2(surroundCenter.y - sol.position.y, surroundCenter.x - sol.position.x);
-        } else {
-          sol.facing = g.facing;
-        }
+        sol.facing = g.facing; // fixed (apex up); soldiers never rotate on their axis
+        sol.position.x = Math.max(0, Math.min(WORLD_SIZE, sol.position.x));
+        sol.position.y = Math.max(0, Math.min(WORLD_SIZE, sol.position.y));
       }
     }
   }
 
-  /** Evenly spaced point on a ring around a centre (for surrounding a target). */
-  _ringPos(center, i, n, r) {
-    const a = (i / Math.max(1, n)) * Math.PI * 2;
-    return { x: center.x + Math.cos(a) * r, y: center.y + Math.sin(a) * r };
-  }
-
-  /**
-   * Defending: each soldier independently charges the nearest enemy that has
-   * come within DEFENSE_RADIUS of the base; with no threats, the squad slowly
-   * orbits the base in a rotating ring. (Combat damage is handled by the skirmish
-   * pass — this just steers them.)
-   */
-  _updateDefending(state, g, members, dt, player) {
-    // Always circle the base's ACTUAL position (not a stale cached anchor).
-    const bpos = player?.base?.position ?? g.anchor;
-    g.anchor = { x: bpos.x, y: bpos.y }; // keep ring/camera centred on the real base
-    const base = g.anchor;
-    const threatR2 = DEFENSE_RADIUS * DEFENSE_RADIUS;
-    const spd = spdMult(player);
-    const n = Math.max(1, members.length);
-
-    for (let i = 0; i < members.length; i++) {
-      const sol = members[i];
-      sol.slot = i;
-
-      // Nearest enemy (to THIS soldier) that is threatening the base.
-      let best = null, bestD2 = Infinity;
-      for (const [, e] of state.soldiers) {
-        if (e.ownerId === sol.ownerId || e.hp <= 0) continue;
-        if (dist2(e.position, base) > threatR2) continue;      // must be near the base
-        const d2 = dist2(sol.position, e.position);
-        if (d2 < bestD2) { bestD2 = d2; best = e; }
-      }
-
-      let tx, ty;
-      if (best) {
-        tx = best.position.x; ty = best.position.y;            // charge it independently
-      } else {
-        const ang = (i / n) * Math.PI * 2 + state.time * ORBIT_SPEED;
-        tx = base.x + Math.cos(ang) * ORBIT_RADIUS;
-        ty = base.y + Math.sin(ang) * ORBIT_RADIUS;            // orbit when calm
-      }
-
-      const dx = tx - sol.position.x, dy = ty - sol.position.y;
-      const d2 = dx * dx + dy * dy;
-      if (d2 > 4) {
-        const len  = Math.sqrt(d2);
-        const step = Math.min(sol.speed * spd * dt, len);
-        sol.position.x += (dx / len) * step;
-        sol.position.y += (dy / len) * step;
-        sol.facing = Math.atan2(dy, dx);
-      }
-    }
-  }
-
-  /**
-   * Farming: each soldier moves to its OWN nearest eatable (naturally spreading
-   * the squad over the centre). With no eatables left it gathers at the anchor.
-   * Combat (skirmish) does the actual damage/XP.
-   */
-  _updateFarming(state, g, members, dt, player) {
-    const spd = spdMult(player);
-    for (let i = 0; i < members.length; i++) {
-      const sol = members[i];
-      sol.slot = i;
-
-      let best = null, bestD2 = Infinity;
-      for (const [, ea] of state.eatables) {
-        const d2 = dist2(sol.position, ea.position);
-        if (d2 < bestD2) { bestD2 = d2; best = ea; }
-      }
-
-      const tx = best ? best.position.x : g.anchor.x;
-      const ty = best ? best.position.y : g.anchor.y;
-      const dx = tx - sol.position.x, dy = ty - sol.position.y;
-      const d2 = dx * dx + dy * dy;
-      // Stop just short so the soldier sits in attack range of the eatable.
-      if (d2 > 26 * 26) {
-        const len  = Math.sqrt(d2);
-        const step = Math.min(sol.speed * spd * dt, len);
-        sol.position.x += (dx / len) * step;
-        sol.position.y += (dy / len) * step;
-        sol.facing = Math.atan2(dy, dx);
-      }
-    }
-  }
-
-  /** Free an attacking group after its target dies: send it home to defend the base. */
+  /** Free an attacking group after its target dies: hold position (do NOT retreat). */
   _release(state, g, members) {
     g.locked   = false;
     g.targetId = null;
-    const player = state.players.get(g.ownerId);
-    setDefending(g, player?.base); // return home and circle the mother base
-    if (g.ownerId === state.playerId)
-      state.notify('✅ Objective destroyed — squad returning to defend base', 'success', g.ownerId);
+    g.status   = 'idle';
+    g.anchor   = this._centroid(members); // stay where they are, ready for new orders
   }
 
   _cull(state) {
@@ -298,6 +194,7 @@ export function addSoldierToNearestGroup(state, sol) {
   for (const [, g] of state.groups) {
     if (g.ownerId !== sol.ownerId || g.locked) continue;
     if (g.status !== 'defending' && g.status !== 'idle') continue;
+    if (g.memberIds.length >= GROUP_MAX_SIZE) continue; // squad is full
     const d2 = dist2(g.anchor, sol.position);
     if (d2 < bestD2) { bestD2 = d2; home = g; }
   }
@@ -314,18 +211,25 @@ export function addSoldierToNearestGroup(state, sol) {
   return g;
 }
 
-/** Move a group to a position (ignored if the group is locked in an attack). */
+/**
+ * A squad is deployable once it has FORMED a full 15. After that it stays
+ * deployable even if casualties drop it below 15 (a veteran formation).
+ */
+export function canDeploy(g) { return !g.locked && (g.memberIds.length >= GROUP_MAX_SIZE || g.formed); }
+
+/** Move a group to a position (only a full 15-squad; target clamped to the map). */
 export function moveGroup(g, x, y) {
-  if (g.locked) return false;
+  if (!canDeploy(g)) return false;
+  const M = 24;
   g.status   = 'moving';
   g.targetId = null;
-  g.anchor   = { x, y };
+  g.anchor   = { x: Math.max(M, Math.min(WORLD_SIZE - M, x)), y: Math.max(M, Math.min(WORLD_SIZE - M, y)) };
   return true;
 }
 
-/** Commit a group to attack a target. Locks it until the target dies / it wipes. */
+/** Commit a full squad to attack a target. Locks it until the target dies / it wipes. */
 export function attackWithGroup(g, targetId) {
-  if (g.locked) return false;
+  if (!canDeploy(g)) return false;
   g.status   = 'attacking';
   g.locked   = true;
   g.targetId = targetId;
@@ -338,9 +242,20 @@ export function attackWithGroup(g, targetId) {
  */
 export function setDefending(g, base) {
   if (g.locked) return false;
-  g.status   = 'defending';
-  g.targetId = null;
+  g.status     = 'defending';
+  g.targetId   = null;
+  g.defendNodeId = null; // defend the mother base
   if (base) g.anchor = { x: base.position.x, y: base.position.y };
+  return true;
+}
+
+/** Send a full squad to garrison a mining node (captures it by presence). */
+export function setDefendNode(g, node) {
+  if (!canDeploy(g)) return false; // needs a full 15 to deploy to a node
+  g.status       = 'defending';
+  g.targetId     = null;
+  g.defendNodeId = node.id;
+  g.anchor       = { x: node.position.x, y: node.position.y };
   return true;
 }
 
@@ -362,6 +277,7 @@ export function splitGroup(state, g) {
   const first = state.soldiers.get(moved[0]);
   const ng = new Group(g.ownerId, g.anchor.x + 30, g.anchor.y + 30);
   ng.facing = g.facing;
+  ng.formed = g.formed; // split-off veterans stay deployable
   ng.status = g.status === 'attacking' ? 'idle' : g.status; // never inherit a lock
   for (const id of moved) {
     ng.memberIds.push(id);
@@ -381,6 +297,7 @@ export function mergeGroup(state, g) {
   let best = null, bestD2 = GROUP_MERGE_RANGE * GROUP_MERGE_RANGE;
   for (const [, o] of state.groups) {
     if (o === g || o.ownerId !== g.ownerId || o.locked) continue;
+    if (o.memberIds.length + g.memberIds.length > GROUP_MAX_SIZE) continue; // would exceed the 15 cap
     const d2 = dist2(g.anchor, o.anchor);
     if (d2 < bestD2) { bestD2 = d2; best = o; }
   }
@@ -395,7 +312,10 @@ export function mergeGroup(state, g) {
   return best;
 }
 
-/** Evenly redistribute members across all of an owner's non-locked groups. */
+/**
+ * Evenly redistribute members across an owner's non-locked groups, never letting
+ * a squad exceed the 15 cap (spawns extra squads if there are more than fit).
+ */
 export function balanceGroups(state, ownerId) {
   const groups = [];
   for (const [, g] of state.groups)
@@ -404,8 +324,24 @@ export function balanceGroups(state, ownerId) {
 
   const pool = [];
   for (const g of groups) { pool.push(...g.memberIds); g.memberIds = []; }
+  if (pool.length === 0) return false;
+
+  // Make sure there are enough squads so none has to exceed the cap.
+  const needed = Math.max(groups.length, Math.ceil(pool.length / GROUP_MAX_SIZE));
+  const base = state.players.get(ownerId)?.base;
+  while (groups.length < needed) {
+    const a = base ? base.position : (groups[0]?.anchor ?? { x: 0, y: 0 });
+    const ng = new Group(ownerId, a.x, a.y);
+    ng.status = 'defending';
+    state.groups.set(ng.id, ng);
+    groups.push(ng);
+  }
+
+  // Round-robin, skipping any squad that's already full.
   let gi = 0;
   for (const id of pool) {
+    let tries = 0;
+    while (groups[gi % groups.length].memberIds.length >= GROUP_MAX_SIZE && tries < groups.length) { gi++; tries++; }
     const g = groups[gi % groups.length];
     g.memberIds.push(id);
     const s = state.soldiers.get(id);

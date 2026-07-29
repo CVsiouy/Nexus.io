@@ -3,6 +3,7 @@ import { Soldier } from '../entities.js';
 import { addSoldierToNearestGroup } from './GroupSystem.js';
 import {
   MINE_CAPTURE_RANGE, MINE_CAPTURE_TIME, MINE_NODE_GOLD, MINE_NODE_SPAWN_MS,
+  MINE_NODE_GOLD_PER_SOLDIER, MINE_STATION_CAP,
 } from '../constants.js';
 
 /**
@@ -43,11 +44,13 @@ export class MiningSystem {
       if (node.captureProg === 0) node.capturingBy = null;
     }
 
-    // Held node: pump gold + grow the occasional defender.
+    // Held node: pump gold (more stationed soldiers → higher rate) + grow defenders.
     if (node.ownerId) {
       const owner = state.players.get(node.ownerId);
       if (!owner?.alive) { node.ownerId = null; return; }
-      owner.base.gold += MINE_NODE_GOLD * dt;
+      const garrison = Math.min(counts.get(node.ownerId) || 0, MINE_STATION_CAP);
+      node.goldRate = MINE_NODE_GOLD + garrison * MINE_NODE_GOLD_PER_SOLDIER;
+      owner.base.gold += node.goldRate * dt;
 
       node.spawnTimer += dtMs;
       if (node.spawnTimer >= MINE_NODE_SPAWN_MS && state.soldierPop(node.ownerId) + 1 <= state.popCap(owner)) {

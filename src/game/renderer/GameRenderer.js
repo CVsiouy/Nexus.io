@@ -1,5 +1,5 @@
 import * as PIXI from 'pixi.js';
-import { WORLD_SIZE, SOLDIER_DEFS, TURRET_DEFS, WALL_CELL_SIZE, EATABLE_DEFS, MINE_NODE_RADIUS } from '../constants.js';
+import { WORLD_SIZE, SOLDIER_DEFS, TURRET_DEFS, WALL_CELL_SIZE, EATABLE_DEFS, MINE_NODE_RADIUS, BASE_DEFENSE_RADIUS } from '../constants.js';
 import { cellPositions } from '../walls.js';
 
 const GEAR_TEETH = 8;
@@ -122,6 +122,10 @@ export class GameRenderer {
 
       g.lineStyle(8, color, 0.12);
       g.drawCircle(x, y, 52);
+
+      // Muster/defense ring — soldiers stationed inside shield the base.
+      g.lineStyle(1.5, color, 0.18);
+      g.drawCircle(x, y, BASE_DEFENSE_RADIUS);
 
       if (base.spawnProtected) {
         const pulse = Math.sin(t * 3.5) * 0.3 + 0.7;

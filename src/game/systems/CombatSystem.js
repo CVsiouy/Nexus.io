@@ -3,7 +3,7 @@ import { Projectile } from '../entities.js';
 import {
   ATTACK_RANGE, TURRET_DEFS, STRUCTURE_DMG_MULT, WALL_DMG_MULT, SOLDIER_RADIUS, WALL_CELL_SIZE,
   CONQUEST_INCOME_BONUS, CONQUEST_GOLD_LUMP, CONQUEST_XP, KILL_XP,
-  EATABLE_DEFS, WILDLING_XP_BOUNTY,
+  EATABLE_DEFS, WILDLING_XP_BOUNTY, BASE_DEFENSE_RADIUS,
 } from '../constants.js';
 import { isStructureTarget, targetRadius } from './GroupSystem.js';
 import { outerBlockingLayer, nearestCell, damageCell, repairWalls } from '../walls.js';
@@ -74,8 +74,20 @@ export class CombatSystem {
     }
   }
 
+  /** True if the base still has living defenders inside its muster ring. */
+  _baseShielded(state, base) {
+    const r2 = BASE_DEFENSE_RADIUS * BASE_DEFENSE_RADIUS;
+    for (const [, s] of state.soldiers) {
+      if (s.hp <= 0 || s.ownerId !== base.ownerId) continue;
+      if (dist2(s.position, base.position) < r2) return true;
+    }
+    return false;
+  }
+
   /** Base assault: the surrounding squad focus-fires the base (big armies crack it). */
   _assaultBase(state, g, base, dtMs, now) {
+    // A base ringed by its own soldiers can't be touched until they're cleared.
+    if (this._baseShielded(state, base)) return;
     const eff = ATTACK_RANGE + targetRadius(state, base);
     for (const id of g.memberIds) {
       const s = state.soldiers.get(id);
