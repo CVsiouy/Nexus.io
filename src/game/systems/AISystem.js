@@ -41,18 +41,29 @@ export class AISystem {
 
       // Garrison discipline: DON'T trickle soldiers out one-by-one to be picked
       // off. Stockpile them and release a single wall sized to the attack.
-      //   • attackers   = enemy soldiers pressing the base (their specs unknown)
-      //   • ownField    = our living soldiers already fighting near the base
-      //   • the defender bonus lets a slightly smaller wall hold (~0.8×)
-      // Release when the stockpile can cover the shortfall, is full, or it's an
-      // emergency (base HP already dropping) — otherwise keep banking soldiers.
+      //   • attackers = enemy soldiers pressing the base (their specs unknown)
+      //   • ownField  = our living soldiers already fighting near the base
+      //   • shortfall = how many more defenders the fight is asking for
+      // How big a wall we hold out for depends on how safe the base still is —
+      // the base heals once the attack is beaten, so a healthy base can afford
+      // to bank up for a stronger wall, while a hurt one must act now:
+      //   • hp > 40%  → comfortable: wait for a full-strength wall (~0.8× shortfall,
+      //                 the defender bonus lets a slightly smaller wall hold)
+      //   • 15–40%    → pressured: release a PARTIAL wave (~0.6×) now — even 5-vs-8
+      //                 kills several, so afterwards the base bleeds far slower
+      //   • hp < 15%  → emergency: dump whatever is banked to survive
       if (base.garrison > 0) {
         const attackers = this._countAttackers(state, player.id, base.position);
         const ownField  = this._countOwnSoldiers(state, player.id);
         const shortfall = Math.max(0, attackers - ownField);
-        const needed    = Math.min(GARRISON_MAX, Math.max(4, Math.ceil(shortfall * 0.8)));
-        const emergency = base.hp < base.maxHp * 0.5;
-        if (base.garrison >= needed || base.garrison >= GARRISON_MAX || emergency) {
+        const hpFrac    = base.hp / base.maxHp;
+
+        let need;
+        if (hpFrac < 0.15)      need = 1;                                                    // emergency: dump it
+        else if (hpFrac < 0.40) need = Math.min(GARRISON_MAX, Math.max(4, Math.ceil(shortfall * 0.6))); // partial thinning wave
+        else                    need = Math.min(GARRISON_MAX, Math.max(5, Math.ceil(shortfall * 0.8))); // full-strength wall
+
+        if (base.garrison >= need || base.garrison >= GARRISON_MAX) {
           releaseGarrison(state, base);
         }
       }
