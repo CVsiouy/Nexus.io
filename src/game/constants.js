@@ -68,7 +68,9 @@ export const WALL_CELLS_PER_LAYER = 3;  // extra capacity per outer ring
 export const WALL_CELL_SIZE     = 12;   // radius of a rendered hexagonal wall cell
 export const MAX_WALL_LAYERS    = 3;    // at most this many wall rings around a base
 // Walls auto-repair a fixed rate once they've gone this long without being hit.
-export const WALL_REPAIR_DELAY  = 10000; // ms of calm before repair begins
+// Wall repair is deliberately slow: it waits TWICE as long as the mother base
+// before it begins, so a wall you've battered stays broken far longer.
+export const WALL_REPAIR_DELAY  = BASE_HP_REGEN_DELAY * 2; // ms of calm before repair begins
 export const WALL_REPAIR_RATE   = 260;   // HP/sec repaired per cell (up to its max)
 
 // ─── Turret definitions (auto-firing base defenses) ────────────────────────────

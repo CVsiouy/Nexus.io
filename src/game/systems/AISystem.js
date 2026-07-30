@@ -35,11 +35,27 @@ export class AISystem {
     const groups = state.groupsOf(player.id).filter(g => !g.locked);
 
     if (threat) {
-      // Under attack: dump the garrison out to reinforce the defence …
-      if (base.garrison > 0) releaseGarrison(state, base);
-      // … and pull the biggest free squad back to defend the base.
+      // Pull the biggest free squad back to defend the base first.
       const def = groups.sort((a, b) => b.memberIds.length - a.memberIds.length)[0];
       if (def) setDefending(def, base);
+
+      // Garrison discipline: DON'T trickle soldiers out one-by-one to be picked
+      // off. Stockpile them and release a single wall sized to the attack.
+      //   • attackers   = enemy soldiers pressing the base (their specs unknown)
+      //   • ownField    = our living soldiers already fighting near the base
+      //   • the defender bonus lets a slightly smaller wall hold (~0.8×)
+      // Release when the stockpile can cover the shortfall, is full, or it's an
+      // emergency (base HP already dropping) — otherwise keep banking soldiers.
+      if (base.garrison > 0) {
+        const attackers = this._countAttackers(state, player.id, base.position);
+        const ownField  = this._countOwnSoldiers(state, player.id);
+        const shortfall = Math.max(0, attackers - ownField);
+        const needed    = Math.min(GARRISON_MAX, Math.max(4, Math.ceil(shortfall * 0.8)));
+        const emergency = base.hp < base.maxHp * 0.5;
+        if (base.garrison >= needed || base.garrison >= GARRISON_MAX || emergency) {
+          releaseGarrison(state, base);
+        }
+      }
       return;
     }
 
@@ -130,6 +146,24 @@ export class AISystem {
       if (dist2(e.position, player.base.position) < R2) return e;
     }
     return null;
+  }
+
+  /** How many enemy soldiers are pressing this position (their specs unknown). */
+  _countAttackers(state, ownerId, pos) {
+    const R2 = 260 * 260;
+    let n = 0;
+    for (const [, e] of state.soldiers) {
+      if (e.hp <= 0 || !state.areEnemies(ownerId, e.ownerId)) continue;
+      if (dist2(e.position, pos) < R2) n++;
+    }
+    return n;
+  }
+
+  /** How many living soldiers this owner already has on the field. */
+  _countOwnSoldiers(state, ownerId) {
+    let n = 0;
+    for (const [, s] of state.soldiers) if (s.hp > 0 && s.ownerId === ownerId) n++;
+    return n;
   }
 
   /** A living teammate whose base has enemies pressing on it (nearest one). */
