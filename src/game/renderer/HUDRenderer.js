@@ -48,6 +48,7 @@ export class HUDRenderer {
     this._turretBtns = [...document.querySelectorAll('#build-panel .turret-btn')];
     this._bpGold = document.getElementById('bp-gold');
     this._bpPop  = document.getElementById('bp-pop');
+    this._bpGarrison = document.getElementById('bp-garrison');
     this._mineBtn  = document.getElementById('mine-btn');
     this._mineCost = document.getElementById('mine-cost');
     this._mineLvl  = document.getElementById('mine-lvl');
@@ -111,7 +112,13 @@ export class HUDRenderer {
     this._hpBar.style.width = (hp / base.maxHp * 100) + '%';
 
     this._goldEl.textContent = Math.floor(base.gold);
-    if (this._goldRate) this._goldRate.textContent = `+${Math.round(goldRate(base))}/s`;
+    if (this._goldRate) {
+      let rate = goldRate(base);                       // passive mother-base mining
+      if (state.mode === 'mining') {                    // + every captured node's income
+        for (const [, n] of state.mineNodes) if (n.ownerId === player.id) rate += n.goldRate;
+      }
+      this._goldRate.textContent = `+${Math.round(rate)}/s`;
+    }
 
     if (base.specialization) {
       this._specBadge.textContent = base.specialization.toUpperCase();
@@ -160,7 +167,7 @@ export class HUDRenderer {
     const turretQ = {};
     for (const e of base.turretQueue) turretQ[e.type] = (turretQ[e.type] || 0) + 1;
 
-    const hash = base.level + '|' + gold + '|' + pop + '/' + cap + '|' + base.mineLevel + '|' +
+    const hash = base.level + '|' + gold + '|' + pop + '/' + cap + '|' + base.mineLevel + '|' + base.garrison + '|' +
       this._buildBtns.map(b => queued[b.dataset.unit] || 0).join(',') + '|' +
       this._turretBtns.map(b => turretQ[b.dataset.turret] || 0).join(',');
     if (hash === this._prevBuildHash) return;
@@ -168,6 +175,7 @@ export class HUDRenderer {
 
     if (this._bpGold) this._bpGold.textContent = gold;
     if (this._bpPop)  this._bpPop.textContent  = `${pop}/${cap}`;
+    if (this._bpGarrison) this._bpGarrison.textContent = `${base.garrison}/15`;
 
     // Mining upgrade button
     if (this._mineBtn) {

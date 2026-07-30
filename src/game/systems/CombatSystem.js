@@ -3,7 +3,7 @@ import { Projectile } from '../entities.js';
 import {
   ATTACK_RANGE, TURRET_DEFS, STRUCTURE_DMG_MULT, WALL_DMG_MULT, SOLDIER_RADIUS, WALL_CELL_SIZE,
   CONQUEST_INCOME_BONUS, CONQUEST_GOLD_LUMP, CONQUEST_XP, KILL_XP,
-  EATABLE_DEFS, WILDLING_XP_BOUNTY, BASE_DEFENSE_RADIUS,
+  EATABLE_DEFS, WILDLING_XP_BOUNTY, BASE_DEFENSE_RADIUS, DEFENDER_ATK_MULT, DEFENDER_DMG_TAKEN,
 } from '../constants.js';
 import { isStructureTarget, targetRadius } from './GroupSystem.js';
 import { outerBlockingLayer, nearestCell, damageCell, repairWalls } from '../walls.js';
@@ -206,6 +206,11 @@ export class CombatSystem {
     if (player?.base.specialization === 'warmonger') dmg *= 1.25;
     dmg *= 1 + (player?.buffs?.atk ?? 0) * 0.10;
 
+    // DEFENDER'S ADVANTAGE (stance-based): a soldier in a DEFENDING squad hits
+    // harder; a soldier being hit while in a DEFENDING squad takes less.
+    const ag = state.groups.get(attacker.groupId);
+    if (ag && ag.status === 'defending') dmg *= DEFENDER_ATK_MULT;
+
     const targetIsBase = state.bases.has(target.id);
     if (siege) dmg *= STRUCTURE_DMG_MULT;                          // siege bonus vs structures
     if (attacker.type === 'saboteur' && targetIsBase) dmg *= 2;    // saboteur specialty
@@ -214,6 +219,8 @@ export class CombatSystem {
     if (targetIsSoldier) {
       const tp = state.players.get(target.ownerId);
       dmg /= 1 + (tp?.buffs?.def ?? 0) * 0.10;
+      const tg = state.groups.get(target.groupId);
+      if (tg && tg.status === 'defending') dmg *= DEFENDER_DMG_TAKEN;
     }
 
     const before = target.hp;

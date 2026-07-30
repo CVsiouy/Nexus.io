@@ -1,6 +1,6 @@
 import { Soldier, Turret } from '../entities.js';
 import {
-  SOLDIER_DEFS, TURRET_DEFS, MAX_TURRETS_PER_BASE,
+  SOLDIER_DEFS, TURRET_DEFS, MAX_TURRETS_PER_BASE, GARRISON_MAX,
 } from '../constants.js';
 import { addSoldierToNearestGroup } from './GroupSystem.js';
 import { addWallCell, canAddWall } from '../walls.js';
@@ -37,13 +37,20 @@ export class ProductionSystem {
     base.soldierBuildTimer += dtMs;
     if (base.soldierBuildTimer < def.spawnMs * speedMul) return;
 
-    if (base.gold < def.cost) return;                                       // can't afford
-    if (state.soldierPop(player.id) + def.pop > state.popCap(player)) return; // no pop room
+    if (base.gold < def.cost) return;                                                   // can't afford
+    if (state.soldierPop(player.id) + base.garrison + def.pop > state.popCap(player)) return; // no pop room (garrison counts)
 
     base.soldierBuildTimer = 0;
     base.gold -= def.cost;
-    const sol = this._emitSoldier(state, player, head.type);
-    addSoldierToNearestGroup(state, sol);
+
+    // Hold new soldiers in the garrison first (safe inside the base). Once it's
+    // full they spawn to the field and join the home defending squad.
+    if (head.type === 'grunt' && base.garrison < GARRISON_MAX) {
+      base.garrison++;
+    } else {
+      const sol = this._emitSoldier(state, player, head.type);
+      addSoldierToNearestGroup(state, sol);
+    }
 
     head.count--;
     if (head.count <= 0) q.shift();

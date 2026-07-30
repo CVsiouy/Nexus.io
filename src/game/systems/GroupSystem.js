@@ -1,5 +1,5 @@
 import { dist, dist2 } from '../../utils/helpers.js';
-import { Group } from '../entities.js';
+import { Group, Soldier } from '../entities.js';
 import {
   FORMATION_SPACING, GROUP_MERGE_RANGE, GROUP_ARRIVE, GROUP_MAX_SIZE,
   BASE_RADIUS, BOSS_RADIUS, SOLDIER_RADIUS, WORLD_SIZE,
@@ -39,8 +39,40 @@ function spdMult(player) { return 1 + (player?.buffs?.spd ?? 0) * 0.10; }
 export class GroupSystem {
   update(state, dt, dtMs) {
     this._updateGroups(state, dt);
+    this._updateDonations(state, dt);
     this._enforceWalls(state);
     this._cull(state);
+  }
+
+  /**
+   * Team-mode donations: a soldier with `donateTo` set has left its squad and
+   * WALKS to that teammate's base; on arrival it changes hands and joins the
+   * teammate's home squad. (Cancels back to its owner if the teammate dies.)
+   */
+  _updateDonations(state, dt) {
+    for (const [, s] of state.soldiers) {
+      if (s.hp <= 0 || !s.donateTo) continue;
+      const mate = state.players.get(s.donateTo);
+      if (!mate?.alive) {                        // teammate gone → keep the soldier
+        s.donateTo = null;
+        if (!state.groups.get(s.groupId)) addSoldierToNearestGroup(state, s);
+        continue;
+      }
+      const bp = mate.base.position;
+      const dx = bp.x - s.position.x, dy = bp.y - s.position.y;
+      const d = Math.hypot(dx, dy);
+      if (d < 60) {                              // arrived → transfer to the teammate
+        s.ownerId  = s.donateTo;
+        s.donateTo = null;
+        s.groupId  = null;
+        addSoldierToNearestGroup(state, s);
+      } else {
+        const step = Math.min(s.speed * dt, d);
+        s.position.x += (dx / d) * step;
+        s.position.y += (dy / d) * step;
+        s.facing = -Math.PI / 2;
+      }
+    }
   }
 
   _updateGroups(state, dt) {
@@ -59,29 +91,47 @@ export class GroupSystem {
         if (!target || target.hp <= 0) {
           this._release(state, g, members);                                 // objective gone
         } else {
-          // Assault priority for a base: outer WALL cell → its DEFENDERS → the base.
+          // Press the base — or, if it's still walled, the nearest outer wall cell
+          // to breach. We do NOT converge on individual defenders (that let the
+          // whole wedge focus-fire one defender and made attackers unbeatable);
+          // the defending formation comes out to meet us and both fight fair.
           let ax = target.position.x, ay = target.position.y;
           if (state.bases.has(target.id)) {
-            const cen0 = this._centroid(members);
             const layer = outerBlockingLayer(target);
             if (layer) {
-              const near = nearestCell(target, layer, cen0);            // breach the wall first
+              const near = nearestCell(target, layer, this._centroid(members)); // breach wall first
               if (near) { ax = near.pos.x; ay = near.pos.y; }
-            } else {
-              const def = this._nearestDefender(state, target, cen0);   // then hunt its defenders
-              if (def) { ax = def.position.x; ay = def.position.y; }     // else the base itself
             }
           }
           g.anchor = { x: ax, y: ay };
         }
       } else if (g.status === 'defending') {
-        // Hold formation at what we guard: a mining node, else the mother base.
+        // Guard point: a mining node, else the mother base.
         let cpos = player?.base?.position;
         if (g.defendNodeId) {
           const node = state.mineNodes.get(g.defendNodeId);
           if (node) cpos = node.position; else g.defendNodeId = null;
         }
-        if (cpos) g.anchor = { x: cpos.x, y: cpos.y };
+        // If an enemy has entered the guarded ring, the WHOLE FORMATION shifts
+        // toward the nearest one (staying concentrated — no scattering), but is
+        // clamped near home so defenders keep their home-ground advantage.
+        if (cpos) {
+          let anchor = { x: cpos.x, y: cpos.y };
+          const r2 = BASE_DEFENSE_RADIUS * BASE_DEFENSE_RADIUS;
+          let best = null, bd = Infinity;
+          for (const [, e] of state.soldiers) {
+            if (e.hp <= 0 || !state.areEnemies(g.ownerId, e.ownerId)) continue;
+            const d = dist2(e.position, cpos);
+            if (d < r2 && d < bd) { bd = d; best = e; }
+          }
+          if (best) {
+            const dx = best.position.x - cpos.x, dy = best.position.y - cpos.y;
+            const d = Math.sqrt(bd) || 1;
+            const reach = Math.min(d, 0.55 * BASE_DEFENSE_RADIUS);
+            anchor = { x: cpos.x + (dx / d) * reach, y: cpos.y + (dy / d) * reach };
+          }
+          g.anchor = anchor;
+        }
       }
       // 'moving' | 'idle' keep whatever anchor was assigned.
 
@@ -91,46 +141,21 @@ export class GroupSystem {
       const ax = g.anchor.x - cen.x, ay = g.anchor.y - cen.y;
       if (g.status === 'moving' && ax * ax + ay * ay <= GROUP_ARRIVE * GROUP_ARRIVE) g.status = 'idle';
 
-      // Defending squads INTERCEPT: if enemies have entered the guarded area,
-      // each soldier peels off to its nearest intruder; otherwise it re-forms.
-      // Every OTHER status (moving / attacking) holds the RIGID wedge — the
-      // formation never breaks apart; combat (skirmish/assault) fires from the
-      // in-range soldiers WITHOUT moving them, so the triangle stays clean.
-      let threats = null;
-      if (g.status === 'defending') {
-        const r2 = BASE_DEFENSE_RADIUS * BASE_DEFENSE_RADIUS;
-        threats = [];
-        for (const [, e] of state.soldiers) {
-          if (e.hp <= 0 || !state.areEnemies(g.ownerId, e.ownerId)) continue;
-          if (dist2(e.position, g.anchor) < r2) threats.push(e);
-        }
-      }
-
-      // ── Steer each member ───────────────────────────────────────────────
+      // ── Steer each member to its RIGID wedge slot ───────────────────────
+      // The formation never breaks apart (no scattering); combat fires from the
+      // in-range soldiers WITHOUT moving them, so the triangle stays clean and
+      // concentrated — attackers and defenders now focus-fire equally.
       for (let i = 0; i < members.length; i++) {
         const sol = members[i];
         sol.slot  = i;
-
-        let tx, ty;
-        if (threats && threats.length) {
-          // intercept the nearest intruder (defending only)
-          let best = null, bd = Infinity;
-          for (const e of threats) { const d = dist2(sol.position, e.position); if (d < bd) { bd = d; best = e; } }
-          tx = best.position.x; ty = best.position.y;
-        } else {
-          const slot = this._slotPos(g, i);   // rigid wedge slot
-          tx = slot.x; ty = slot.y;
-        }
-
-        {
-          const dx = tx - sol.position.x, dy = ty - sol.position.y;
-          const d2 = dx * dx + dy * dy;
-          if (d2 > 4) {
-            const len  = Math.sqrt(d2);
-            const step = Math.min(sol.speed * spdMult(player) * dt, len);
-            sol.position.x += (dx / len) * step;
-            sol.position.y += (dy / len) * step;
-          }
+        const slot = this._slotPos(g, i);
+        const dx = slot.x - sol.position.x, dy = slot.y - sol.position.y;
+        const d2 = dx * dx + dy * dy;
+        if (d2 > 4) {
+          const len  = Math.sqrt(d2);
+          const step = Math.min(sol.speed * spdMult(player) * dt, len);
+          sol.position.x += (dx / len) * step;
+          sol.position.y += (dy / len) * step;
         }
         sol.facing = g.facing; // fixed (apex up); soldiers never rotate on their axis
         sol.position.x = Math.max(0, Math.min(WORLD_SIZE, sol.position.x));
@@ -247,6 +272,28 @@ function _rowCol(i) {
   const row = Math.floor((-1 + Math.sqrt(1 + 8 * i)) / 2);
   const col = i - (row * (row + 1)) / 2;
   return { row, col };
+}
+
+/**
+ * Release a base's garrison: spawn all held soldiers AT ONCE as one fresh
+ * DEFENDING formation at the base. Returns the new group (or null if empty).
+ */
+export function releaseGarrison(state, base) {
+  const n = base.garrison;
+  if (n <= 0) return null;
+  base.garrison = 0;
+  const g = new Group(base.ownerId, base.position.x, base.position.y);
+  for (let i = 0; i < n; i++) {
+    const a = Math.random() * Math.PI * 2, r = 30 + Math.random() * 25;
+    const s = new Soldier(base.ownerId, 'grunt', base.position.x + Math.cos(a) * r, base.position.y + Math.sin(a) * r);
+    state.soldiers.set(s.id, s);
+    s.groupId = g.id;
+    g.memberIds.push(s.id);
+  }
+  g.formed = n >= GROUP_MAX_SIZE; // a full release is immediately deployable
+  state.groups.set(g.id, g);
+  setDefending(g, base);
+  return g;
 }
 
 /** Create a fresh group for one soldier at its position. */

@@ -4,7 +4,7 @@ import { GameState }         from './GameState.js';
 import { buildWorld }        from './World.js';
 import { CombatSystem }      from './systems/CombatSystem.js';
 import { ProductionSystem }  from './systems/ProductionSystem.js';
-import { GroupSystem, addSoldierToNearestGroup } from './systems/GroupSystem.js';
+import { GroupSystem, releaseGarrison } from './systems/GroupSystem.js';
 import { InputSystem }       from './systems/InputSystem.js';
 import { AISystem }          from './systems/AISystem.js';
 import { CenterSystem }      from './systems/CenterSystem.js';
@@ -124,7 +124,7 @@ export class Game {
     // Squad command buttons (mirror the keyboard shortcuts)
     this._wireBtn('cmd-defend',  () => this._input._doDefend());
     this._wireBtn('cmd-base',    () => this._input.focusBase());
-    this._wireBtn('cmd-donate',  () => this._donate());
+    this._wireBtn('cmd-release', () => this._releaseGarrison());
 
     window.addEventListener('resize', () => {
       this._app.renderer.resize(window.innerWidth, window.innerHeight);
@@ -142,6 +142,7 @@ export class Game {
         const specOpen = document.getElementById('spec-modal').classList.contains('vis');
         if (!specOpen) this.togglePause();
       }
+      if (e.code === 'KeyR' && this._running && !this._gameOver) this._releaseGarrison();
     });
     document.getElementById('restart-btn').addEventListener('click', () => location.reload());
   }
@@ -151,14 +152,16 @@ export class Game {
     if (el) el.addEventListener('click', fn);
   }
 
+  /** Release the player's garrison as a fresh defending formation. */
+  _releaseGarrison() {
+    const base = this._state.players.get('player')?.base;
+    if (base) releaseGarrison(this._state, base);
+  }
+
   /** Build the world for the chosen mode ('ffa' | 'team') and begin play. */
   startMatch(mode = 'ffa') {
     this._mode = mode;
     buildWorld(this._state, mode);
-
-    // Team mode shows the Donate button.
-    const donate = document.getElementById('cmd-donate');
-    if (donate) donate.style.display = mode === 'team' ? 'flex' : 'none';
 
     // Default view: the whole map, from the centre (not following the base).
     const cam = this._camera;
@@ -338,40 +341,6 @@ export class Game {
         if (q[i].count <= 0) q.splice(i, 1);
         break;
       }
-    }
-  }
-
-  // ── Team mode: donate soldiers to a teammate ────────────────────────────────
-  _donate() {
-    if (this._mode !== 'team') return;
-    const state = this._state;
-    const me = state.players.get('player');
-    if (!me?.alive) return;
-    // A living teammate to receive the gift.
-    let mate = null;
-    for (const [, p] of state.players) {
-      if (p.id !== me.id && p.alive && p.team === me.team) { mate = p; break; }
-    }
-    if (!mate) return;
-
-    // Take up to 5 soldiers from the player's non-locked squads.
-    const give = [];
-    for (const g of state.groupsOf(me.id)) {
-      if (g.locked) continue;
-      for (const id of [...g.memberIds]) {
-        const s = state.soldiers.get(id);
-        if (s && s.hp > 0) { give.push(s); if (give.length >= 5) break; }
-      }
-      if (give.length >= 5) break;
-    }
-    if (!give.length) return;
-
-    for (const s of give) {
-      const old = state.groups.get(s.groupId);
-      if (old) old.memberIds = old.memberIds.filter(id => id !== s.id);
-      s.ownerId = mate.id;
-      s.position = { x: mate.base.position.x + (Math.random() * 40 - 20), y: mate.base.position.y + (Math.random() * 40 - 20) };
-      addSoldierToNearestGroup(state, s);
     }
   }
 

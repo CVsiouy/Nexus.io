@@ -731,8 +731,9 @@
       <div class="panel-body">
         <div class="ctrl-row">
           <span class="key-badge"><kbd>Click squad</kbd> Select</span>
-          <span class="key-badge"><kbd>Click ground</kbd> Move</span>
-          <span class="key-badge"><kbd>Click enemy</kbd> Attack (locks)</span>
+          <span class="key-badge"><kbd>Drag box</kbd> Select many</span>
+          <span class="key-badge"><kbd>Click enemy</kbd> All attack</span>
+          <span class="key-badge"><kbd>R-click</kbd> Unselect</span>
         </div>
         <div class="ctrl-row">
           <span class="key-badge"><kbd>WASD</kbd> Pan map</span>
@@ -762,9 +763,9 @@
 
     <!-- Squad command bar (above build panel) -->
     <div id="cmd-bar" class="panel">
+      <button class="cmd-btn" id="cmd-release" title="Release the garrison held inside your base as one fresh 15-formation"><span class="c-icon">🏰</span><span class="c-name">Release</span><span class="c-key">R</span></button>
       <button class="cmd-btn" id="cmd-defend"  title="Send the selected squad to defend the mother base"><span class="c-icon">🛡️</span><span class="c-name">Defend</span><span class="c-key">F</span></button>
       <button class="cmd-btn" id="cmd-base"    title="Focus camera on your mother base"><span class="c-icon">🏠</span><span class="c-name">Base</span><span class="c-key">Spc</span></button>
-      <button class="cmd-btn" id="cmd-donate"  title="Donate up to 5 soldiers to a teammate (Team mode)" style="display:none"><span class="c-icon">🤝</span><span class="c-name">Donate</span><span class="c-key">·</span></button>
     </div>
 
     <!-- Build panel (bottom-center) — click to QUEUE (right-click removes soldiers) -->
@@ -774,6 +775,7 @@
         <span class="handle-title">Build</span>
         <span class="bp-mini"><span class="bp-k">GOLD</span> <span class="bp-v" id="bp-gold">0</span></span>
         <span class="bp-mini"><span class="bp-k">POP</span> <span class="bp-v" id="bp-pop">0/8</span></span>
+        <span class="bp-mini"><span class="bp-k">🏰</span> <span class="bp-v" id="bp-garrison">0/15</span></span>
         <span class="handle-hint">Q</span>
       </div>
       <div class="panel-body">

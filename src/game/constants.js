@@ -45,6 +45,11 @@ export const SOLDIER_RADIUS = 10;
 // Muster/defense ring around a mother base (~3× its size). Soldiers stationed
 // inside it shield the base: enemies must kill them before they can hit the base.
 export const BASE_DEFENSE_RADIUS = 160;
+// Defender's advantage (stance-based, position-independent): a soldier in a
+// DEFENDING squad deals more and takes less, so an equal defending force beats
+// an attacking one. Tuned so 15 defenders reliably beat 15 attackers.
+export const DEFENDER_ATK_MULT   = 1.1;  // defending soldiers hit a bit harder
+export const DEFENDER_DMG_TAKEN  = 0.82; // …and take a bit less (≈1.34× net → win with real losses)
 export const SURROUND_GAP   = 18;  // squad forms a ring this far outside the target
 // Soldiers hit far harder against a mother base (siege), so a slow one-at-a-time
 // assault still brings a base down in a reasonable time.
@@ -101,6 +106,9 @@ export const CONQUEST_XP           = 180;  // one-time XP bounty (× victim leve
 // Big budgets so you can station large formations and still have troops to donate.
 export const POP_BASE       = 26;   // base population budget
 export const POP_PER_LEVEL  = 10;   // extra budget per base level
+// Garrison: soldiers can be HELD safely inside the base and released together as
+// a full formation (so they aren't picked off one-by-one as they spawn).
+export const GARRISON_MAX   = 15;
 
 // ─── Groups & formation ────────────────────────────────────────────────────────
 export const FORMATION_SPACING = 22;   // px between soldiers in a wedge/triangle
@@ -177,9 +185,9 @@ export const MINE_NODE_COUNT     = 9;    // total nodes on the map
 export const MINE_NODE_RADIUS    = 26;   // node body radius (also the capture ring)
 export const MINE_CAPTURE_RANGE  = 90;   // soldiers within this of a node contest it
 export const MINE_CAPTURE_TIME   = 4000; // ms for 1 soldier to flip a node (more = faster)
-export const MINE_NODE_GOLD      = 4;    // base gold/sec a captured node adds to its owner
-export const MINE_NODE_GOLD_PER_SOLDIER = 0.8; // extra gold/sec per soldier stationed on it
-export const MINE_STATION_CAP    = 12;   // soldiers beyond this don't add more gold
+export const MINE_NODE_GOLD      = 1.5;  // base gold/sec a captured node adds to its owner
+export const MINE_NODE_GOLD_PER_SOLDIER = 0.3; // extra gold/sec per soldier stationed on it
+export const MINE_STATION_CAP    = 10;   // soldiers beyond this don't add more gold
 export const MINE_NODE_SPAWN_MS  = 9000; // a held node grows a grunt this often
 export const MINE_NODE_MIN_SEP   = 360;  // min spacing between nodes / from bases
 

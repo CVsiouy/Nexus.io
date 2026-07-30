@@ -1,6 +1,6 @@
 import { dist2 } from '../../utils/helpers.js';
-import { BOT_THINK_RATE, SOLDIER_DEFS, TURRET_DEFS, GROUP_MAX_SIZE } from '../constants.js';
-import { attackWithGroup, setDefending, moveGroup } from './GroupSystem.js';
+import { BOT_THINK_RATE, SOLDIER_DEFS, TURRET_DEFS, GROUP_MAX_SIZE, GARRISON_MAX } from '../constants.js';
+import { attackWithGroup, setDefending, moveGroup, releaseGarrison } from './GroupSystem.js';
 import { buyMineUpgrade, mineUpgradeCost } from './ProgressionSystem.js';
 
 /**
@@ -35,13 +35,27 @@ export class AISystem {
     const groups = state.groupsOf(player.id).filter(g => !g.locked);
 
     if (threat) {
-      // Pull the biggest free squad back to defend the base.
+      // Under attack: dump the garrison out to reinforce the defence …
+      if (base.garrison > 0) releaseGarrison(state, base);
+      // … and pull the biggest free squad back to defend the base.
       const def = groups.sort((a, b) => b.memberIds.length - a.memberIds.length)[0];
       if (def) setDefending(def, base);
       return;
     }
 
+    // Not under attack: once the garrison is full, field it as a formation.
+    if (base.garrison >= GARRISON_MAX) releaseGarrison(state, base);
+
     const ready = groups.filter(g => g.memberIds.length >= GROUP_MAX_SIZE && g.status !== 'moving');
+
+    // Team mode: if a teammate is under attack and we can spare a formation
+    // (keep at least one in reserve for our own defence), send help.
+    if (state.mode === 'team' && ready.length >= 2) {
+      const ally = this._teammateUnderAttack(state, player);
+      // setDefending re-anchors the squad on the ally's base — it walks there and
+      // holds a defending stance (earning the defender bonus once it arrives).
+      if (ally) { setDefending(ready[0], ally.base); return; }
+    }
 
     // Mining mode: send a full squad to grab the nearest node we don't own.
     if (state.mode === 'mining' && ready.length) {
@@ -116,5 +130,25 @@ export class AISystem {
       if (dist2(e.position, player.base.position) < R2) return e;
     }
     return null;
+  }
+
+  /** A living teammate whose base has enemies pressing on it (nearest one). */
+  _teammateUnderAttack(state, player) {
+    const R2 = 220 * 220;
+    let best = null, bestD2 = Infinity;
+    for (const [, ally] of state.players) {
+      if (!ally.alive || ally.id === player.id) continue;
+      if (state.areEnemies(player.id, ally.id)) continue; // teammate only
+      // Is anyone attacking this teammate's base?
+      let pressed = false;
+      for (const [, e] of state.soldiers) {
+        if (e.hp <= 0 || !state.areEnemies(ally.id, e.ownerId)) continue;
+        if (dist2(e.position, ally.base.position) < R2) { pressed = true; break; }
+      }
+      if (!pressed) continue;
+      const d2 = dist2(player.base.position, ally.base.position);
+      if (d2 < bestD2) { bestD2 = d2; best = ally; }
+    }
+    return best;
   }
 }

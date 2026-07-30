@@ -36,6 +36,9 @@ export class Base {
     this.soldierBuildTimer = 0;
     this.wallBuildTimer    = 0;
 
+    // Garrison: soldiers held inside the base (count), released together as a squad.
+    this.garrison          = 0;
+
     // Turret build queue (dormant — turrets disabled for now). Shape: [{ type }].
     this.turretQueue     = [];
 
@@ -68,6 +71,7 @@ export class Soldier {
 
     this.groupId    = null; // which Group this soldier belongs to
     this.slot       = 0;    // formation slot index within the group
+    this.donateTo   = null; // (Team mode) teammate id this soldier is walking over to join
   }
 }
 
