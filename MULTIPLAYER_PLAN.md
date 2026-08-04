@@ -1284,6 +1284,7 @@ If the answer is yes, prefer Option B, and budget 2–3 weeks. Nothing in this p
 
 These change the plan, so the earlier you answer the better.
 
+
 **1. Confirm 8 players per match?**
 I recommend yes. Every number in `constants.js` — map size, base ring radius, all the ranges — is tuned for 8 bases. Bigger arenas of 40–100 players would need a much larger map, complete rebalancing, fog of war, and interest management: roughly **6 extra weeks**. Ship 8, revisit later with real data.
 
