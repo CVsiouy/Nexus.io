@@ -1,0 +1,10 @@
+{
+  "name": "@nexus/loadtest",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Measures how many matches one CPU core can run. Turns the capacity estimates in MULTIPLAYER_PLAN.md into measured numbers.",
+  "scripts": {
+    "rooms": "node src/rooms.mjs"
+  }
+}

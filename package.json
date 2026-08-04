@@ -1,16 +1,16 @@
 {
   "name": "nexus-io",
   "version": "1.0.0",
+  "private": true,
   "type": "module",
+  "description": "Nexus.io — .io strategy game. Monorepo: shared simulation + client (+ server from Phase 1).",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview"
-  },
-  "dependencies": {
-    "pixi.js": "^7.4.2"
-  },
-  "devDependencies": {
-    "vite": "^5.0.0"
+    "dev": "npm run dev --workspace @nexus/client",
+    "build": "npm run build --workspace @nexus/client",
+    "test": "node --test packages/sim/test/ apps/client/test/"
   }
 }

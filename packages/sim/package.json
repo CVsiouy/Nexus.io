@@ -1,0 +1,12 @@
+{
+  "name": "@nexus/sim",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "The rules engine. Pure game logic — no PixiJS, no DOM. Runs in a browser Web Worker AND on the Node server.",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./*": "./*"
+  }
+}

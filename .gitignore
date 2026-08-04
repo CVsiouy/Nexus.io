@@ -1,0 +1,12 @@
+# Dependencies — installed by Docker, never committed.
+node_modules/
+**/node_modules/
+
+# Build output
+dist/
+**/dist/
+
+# Local tooling artefacts
+infra/smoke-screenshot.png
+*.log
+.DS_Store

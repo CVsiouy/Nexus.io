@@ -1,0 +1,19 @@
+{
+  "name": "@nexus/client",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "The browser client: PixiJS renderer, HUD, input. Contains no game rules.",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "vite build",
+    "preview": "vite preview --host 0.0.0.0"
+  },
+  "dependencies": {
+    "colyseus.js": "^0.15.0",
+    "pixi.js": "^7.4.2"
+  },
+  "devDependencies": {
+    "vite": "^5.0.0"
+  }
+}

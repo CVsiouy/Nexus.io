@@ -1,0 +1,24 @@
+{
+  "name": "@nexus/server",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "The backend. Runs authoritative matches — every game rule is decided here, never in the browser.",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "test": "tsx --test test/protocol.test.ts",
+    "test:integration": "node test/integration.mjs",
+    "test:bandwidth": "node test/bandwidth.mjs"
+  },
+  "dependencies": {
+    "@colyseus/core": "^0.15.0",
+    "@colyseus/ws-transport": "^0.15.0",
+    "colyseus": "^0.15.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "colyseus.js": "^0.15.0"
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "name": "@nexus/protocol",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Message definitions shared by client and server. TypeScript, so the two can never silently disagree about a message shape.",
+  "main": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  }
+}

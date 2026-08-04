@@ -1134,6 +1134,49 @@ The estimates rest on assumptions to be replaced by Phase 3 measurements:
 - ~15 KB/second downstream per player, ~0.5 KB/s upstream
 - Monthly bandwidth assumes 30% average-to-peak (you don't hit peak all day)
 
+> ## ✅ MEASURED — the estimates above are superseded
+>
+> **Phase 3 is complete and both numbers are now measured, not guessed.**
+>
+> ### Bandwidth
+>
+> | | Phase 1 (JSON) | **Phase 3 (binary)** | Estimate above |
+> |---|---|---|---|
+> | Per player | 141 KB/s | **6.5 KB/s** | 15 KB/s |
+> | Per snapshot | 14.6 KB | **664 B** | ~1.5 KB |
+> | At 10,000 CCU | ~1,100 TB/mo | **~52 TB/mo** | ~150 TB/mo |
+>
+> A **21× reduction**, and better than the original target. What did it:
+> raw bytes instead of JSON key names; positions quantized to 12 bits per axis
+> (0.68px — invisible on a map drawn zoomed out); dropping three things the
+> client can derive for itself (base rotation, soldier facing, and the
+> soldier→squad link, which squads already imply via their member lists); and
+> keyframes every 2s so names, colours, base positions and maxHp aren't
+> retransmitted ten times a second.
+>
+> ### CPU — the estimate was badly pessimistic
+>
+> | | Estimate above | **Measured** |
+> |---|---|---|
+> | Matches per core | 20–40 | **296** (at 60% load, late-game match state) |
+> | Cores at 10,000 CCU | 32–64 | **~5** |
+>
+> After the spatial grid, the simulation examines **27× fewer candidates** per
+> proximity query. A full late-game match costs 0.10 ms per tick against a
+> 50 ms budget.
+>
+> ### What this changes in the cost model
+>
+> Both directions favour the plan, and the shape of the bill changes:
+> **CPU is no longer the constraint — bandwidth still is, just far less of it.**
+> The §12 tables below are now conservative; at 10,000 CCU the real figure is
+> closer to a handful of cores and ~52 TB/month. The Hetzner-vs-AWS argument
+> only gets stronger, since egress is an even larger share of a smaller bill.
+>
+> Reproduce:
+> - `docker compose exec server npx tsx test/bandwidth.mjs`
+> - `docker run --rm -v "$PWD":/app -w /app -e ROOMS=20 -e WARMUP_SEC=900 node:20-alpine node apps/loadtest/src/rooms.mjs`
+
 | Players (CCU) | Matches | CPU cores | Bandwidth/month |
 |---|---|---|---|
 | 100 | 13 | under 1 | ~1.5 TB |

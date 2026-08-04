@@ -1,10 +1,57 @@
+# Two separate programs: the frontend (a website) and the backend (a game
+# server). They talk over a WebSocket and are deployed to entirely different
+# places in production — the frontend to a CDN, the backend to game machines.
+# Running them as two services here keeps that separation honest from day one.
 services:
-  nodus:
-    build: .
+
+  # ── FRONTEND ──────────────────────────────────────────────────────────────
+  # The website: PixiJS rendering, the HUD, mouse and keyboard. Contains no
+  # game rules whatsoever — it can only draw, and ask the backend for things.
+  client:
+    build:
+      context: .
+      dockerfile: infra/client.Dockerfile
     ports:
       - "5173:5173"
     volumes:
-      - ./src:/app/src
-      - ./index.html:/app/index.html
+      - ./packages:/app/packages
+      - ./apps/client/src:/app/apps/client/src
+      - ./apps/client/index.html:/app/apps/client/index.html
+      - ./apps/client/vite.config.js:/app/apps/client/vite.config.js
+      # Anonymous volumes keep the container's installed node_modules, so the
+      # host directory doesn't shadow them with empty folders.
+      - /app/node_modules
+      - /app/apps/client/node_modules
     environment:
+      # Bind-mounted files on Windows/macOS don't reliably emit change events,
+      # so Vite polls instead.
       - CHOKIDAR_USEPOLLING=true
+      # Where the browser should look for the backend. In production this
+      # becomes a real domain like wss://eu1.nexus.io.
+      - VITE_SERVER_URL=ws://localhost:2567
+    depends_on:
+      - server
+
+  # ── BACKEND ───────────────────────────────────────────────────────────────
+  # The authority. Runs matches, decides all combat, economy and levelling.
+  # Never trusts anything a browser says.
+  server:
+    build:
+      context: .
+      dockerfile: infra/server.Dockerfile
+    ports:
+      - "2567:2567"
+    volumes:
+      - ./packages:/app/packages
+      - ./apps/server/src:/app/apps/server/src
+      - ./apps/server/test:/app/apps/server/test
+      - /app/node_modules
+      - /app/apps/server/node_modules
+    environment:
+      - PORT=2567
+      - NODE_ENV=development
+      # Bind-mounted files on Windows/macOS don't reliably emit change events,
+      # so the watcher polls instead. If a server edit still doesn't take
+      # effect, run: docker compose restart server
+      - CHOKIDAR_USEPOLLING=true
+      - TSX_WATCH_POLL=true
