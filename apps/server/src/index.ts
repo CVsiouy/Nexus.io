@@ -5,6 +5,7 @@ import { ArenaRoom } from './ArenaRoom.js';
 import { config, validateConfig } from './config.js';
 import { log } from './log.js';
 import { renderMetrics, metricsContentType } from './metrics.js';
+import { parseFeedback, recordFeedback } from './telemetry.js';
 
 /**
  * The game server.
@@ -28,6 +29,43 @@ let shuttingDown = false;
 
 const httpServer = http.createServer(async (req, res) => {
   const url = (req.url ?? '/').split('?')[0];
+
+  // The frontend is on a different domain from the backend, so the browser
+  // blocks POSTs to it unless we explicitly allow that origin. Only the sites
+  // in ALLOWED_ORIGINS are permitted (any origin in development).
+  const origin = req.headers.origin;
+  if (origin && (config.allowedOrigins.length === 0 || config.allowedOrigins.includes(origin))) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Vary', 'Origin');
+  }
+  if (req.method === 'OPTIONS') {
+    res.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    res.setHeader('Access-Control-Max-Age', '86400');
+    res.writeHead(204);
+    return res.end();
+  }
+
+  // Player feedback from the end-of-match screen. Anonymous, no account needed.
+  if (url === '/feedback' && req.method === 'POST') {
+    // Cap the body: an unbounded read is a trivial way to exhaust memory.
+    let body = '';
+    let tooBig = false;
+    req.on('data', (chunk) => {
+      body += chunk;
+      if (body.length > 4096) { tooBig = true; req.destroy(); }
+    });
+    req.on('end', () => {
+      if (tooBig) return json(res, 413, { error: 'too large' });
+      let parsed: unknown;
+      try { parsed = JSON.parse(body); } catch { return json(res, 400, { error: 'bad json' }); }
+      const fb = parseFeedback(parsed);
+      if (!fb) return json(res, 400, { error: 'bad feedback' });
+      recordFeedback(fb);
+      json(res, 200, { ok: true });
+    });
+    return;
+  }
 
   if (url === '/health') {
     return json(res, 200, {

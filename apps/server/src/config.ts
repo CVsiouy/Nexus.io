@@ -47,6 +47,18 @@ export const config = {
 
   /** Optional error reporting. Leave empty to disable. */
   sentryDsn: str('SENTRY_DSN', ''),
+
+  /**
+   * Match length cap, in milliseconds. Defaults to the protocol's 20 minutes.
+   *
+   * Overridable because playtest sessions usually want shorter rounds — you
+   * learn more from six 8-minute matches than two 20-minute ones, and nobody
+   * wants their first game to be twenty minutes long.
+   */
+  matchLimitMs: num('MATCH_LIMIT_MS', 20 * 60 * 1000),
+
+  /** Where match telemetry and feedback are written. */
+  telemetryDir: str('TELEMETRY_DIR', '/app/data'),
 };
 
 /** Checked at boot: refuse to start misconfigured rather than fail subtly later. */

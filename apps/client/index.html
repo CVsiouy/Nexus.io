@@ -533,6 +533,42 @@
     .go-row .r-dot { width: 11px; height: 11px; border-radius: 50%; }
     .go-row .r-xp { color: #64748b; font-variant-numeric: tabular-nums; }
 
+    /* ─── Playtest feedback ─── */
+    #feedback {
+      display: none; flex-direction: column; align-items: center; gap: 10px;
+      margin: 20px auto 4px; pointer-events: all;
+      font-family: 'Rajdhani', sans-serif;
+    }
+    #feedback.vis { display: flex; }
+    #feedback.sent .fb-q, #feedback.sent .fb-stars,
+    #feedback.sent .fb-comment, #feedback.sent .fb-send { display: none; }
+    #feedback.sent .fb-thanks { display: block; }
+    .fb-q { font-size: 15px; font-weight: 600; letter-spacing: 1px; color: #64748b; }
+    .fb-stars { display: flex; gap: 8px; }
+    .fb-star {
+      width: 42px; height: 42px; border-radius: 50%;
+      border: 2px solid #d5dde6; background: #fff; cursor: pointer;
+      font-family: 'Rajdhani', sans-serif; font-size: 16px; font-weight: 700;
+      color: #64748b; transition: all .15s ease;
+    }
+    .fb-star:hover { border-color: #0077cc; color: #0077cc; transform: translateY(-2px); }
+    .fb-star.sel { background: #0077cc; border-color: #0077cc; color: #fff; }
+    .fb-comment {
+      width: min(360px, 80vw); padding: 10px 16px; border-radius: 22px;
+      border: 2px solid #d5dde6; background: #fff; outline: none;
+      font-family: 'Rajdhani', sans-serif; font-size: 14px; color: #223;
+    }
+    .fb-comment:focus { border-color: #0077cc; }
+    .fb-send {
+      padding: 9px 26px; border-radius: 22px; border: none; cursor: pointer;
+      background: #16a34a; color: #fff;
+      font-family: 'Rajdhani', sans-serif; font-size: 13px; font-weight: 700;
+      letter-spacing: 1.5px;
+    }
+    .fb-send:hover { background: #1cc45c; }
+    .fb-send:disabled { opacity: .5; cursor: default; }
+    .fb-thanks { display: none; font-size: 15px; font-weight: 600; color: #16a34a; }
+
     /* Base button blinks red while the base is under attack */
     @keyframes baseAlert { 0%,100% { box-shadow: 0 0 0 0 rgba(220,38,38,0.0); border-color:#d5dde6; } 50% { box-shadow: 0 0 0 3px rgba(220,38,38,0.55); border-color:#dc2626; } }
     #cmd-base.under-attack { animation: baseAlert 0.7s ease-in-out infinite; background: #fff2f2; }
@@ -1036,6 +1072,22 @@
     <div id="go-sub">Your network conquered all rivals.</div>
     <!-- Final standings, filled in from the server's round-end message. -->
     <div id="go-standings"></div>
+
+    <!-- Playtest feedback. Anonymous, one tap, no account. -->
+    <div id="feedback">
+      <div class="fb-q">How was that match?</div>
+      <div class="fb-stars">
+        <button class="fb-star" data-rating="1" title="Bad">1</button>
+        <button class="fb-star" data-rating="2" title="Meh">2</button>
+        <button class="fb-star" data-rating="3" title="OK">3</button>
+        <button class="fb-star" data-rating="4" title="Good">4</button>
+        <button class="fb-star" data-rating="5" title="Great">5</button>
+      </div>
+      <input id="fb-comment" class="fb-comment" type="text" maxlength="200"
+             placeholder="Anything to add? (optional)" autocomplete="off" />
+      <button id="fb-send" class="fb-send">SEND FEEDBACK</button>
+      <div id="fb-thanks" class="fb-thanks">Thanks — that helps a lot 🙏</div>
+    </div>
     <div class="go-actions">
       <button id="restart-btn">↺ PLAY AGAIN</button>
       <button id="go-exit-btn" class="menu-action danger">✕ EXIT</button>

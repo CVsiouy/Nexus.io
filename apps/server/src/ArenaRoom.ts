@@ -8,6 +8,7 @@ import {
   snapshotBytes, snapshotsSent, commands, roomErrors, matchesCompleted,
   joins, disconnects, applyDelta,
 } from './metrics.js';
+import { recordMatch, SAMPLE_EVERY_MS, type MatchSample } from './telemetry.js';
 import {
   validateCommand, encodeSnapshot, PROTOCOL_VERSION, TICK_MS, SNAPSHOT_EVERY_TICKS,
   COMMAND_RATE_LIMIT, SEATS, MATCH_LIMIT_MS, RECONNECT_GRACE_MS, MSG,
@@ -57,6 +58,16 @@ export class ArenaRoom extends Room {
   /** This room's own contribution to the process-wide gauges. */
   private lastPlayers = 0;
   private lastBots = 0;
+
+  // ── Telemetry, for the playtest ───────────────────────────────────────────
+  /** Economy snapshots over the match, so we can see whether a leader ran away. */
+  private samples: MatchSample[] = [];
+  private nextSampleAt = 0;
+  /** When each base fell, and to whom. */
+  private eliminations = new Map<string, { atMs: number; by: string | null }>();
+  /** Every owner id that a human ever controlled — bots that were never played
+   *  should not be counted as players when analysing a playtest. */
+  private everHuman = new Set<string>();
 
   onCreate(options: { mode?: 'ffa' | 'team' | 'mining' }) {
     const mode = options?.mode ?? 'ffa';
@@ -133,9 +144,11 @@ export class ArenaRoom extends Room {
 
     this.seatOf.set(client.sessionId, player.id);
     this.budgets.set(client.sessionId, COMMAND_RATE_LIMIT);
+    this.everHuman.add(player.id);
 
     client.send(MSG.WELCOME, {
       protocol: PROTOCOL_VERSION,
+      matchId: this.roomId,
       youAre: player.id,
       seat: player.seat,
       mode: this.sim.state.mode,
@@ -178,6 +191,7 @@ export class ArenaRoom extends Room {
         this.budgets.set(client.sessionId, COMMAND_RATE_LIMIT);
         client.send(MSG.WELCOME, {
           protocol: PROTOCOL_VERSION,
+          matchId: this.roomId,
           youAre: player.id,
           seat: player.seat,
           mode: this.sim.state.mode,
@@ -280,6 +294,19 @@ export class ArenaRoom extends Room {
 
     const events = this.sim.drainEvents();
 
+    // Note when each base fell and who took it, so the analysis can ask whether
+    // first blood tends to decide the whole match.
+    for (const ev of events) {
+      if (ev.type === 'playerEliminated' && !this.eliminations.has(ev.data.ownerId)) {
+        this.eliminations.set(ev.data.ownerId, {
+          atMs: this.sim.state.time,
+          by: ev.data.killerId ?? null,
+        });
+      }
+    }
+
+    this.maybeSample();
+
     // Send the world 10 times a second, not 20. The client interpolates between
     // snapshots, so a higher rate costs bandwidth without looking any better.
     if (this.tickCount % SNAPSHOT_EVERY_TICKS === 0) {
@@ -310,6 +337,63 @@ export class ArenaRoom extends Room {
     this.checkMatchOver();
   }
 
+  /**
+   * Take an economy reading every 15 seconds of match time.
+   *
+   * A single end-of-match scoreboard cannot show a snowball — it only shows who
+   * won. The GAP over time is what tells you whether the match was decided at
+   * minute eight and the remaining twelve were a formality.
+   */
+  private maybeSample() {
+    const now = this.sim.state.time;
+    if (now < this.nextSampleAt) return;
+    this.nextSampleAt = now + SAMPLE_EVERY_MS;
+
+    const players = [];
+    for (const [, p] of this.sim.state.players) {
+      players.push({
+        seat: p.seat,
+        gold: Math.round(p.base.gold),
+        xp: Math.round(p.base.xpEarned),
+        level: p.base.level,
+        soldiers: this.sim.state.soldierCount(p.id),
+        alive: p.alive,
+      });
+    }
+    this.samples.push({ atMs: Math.round(now), players });
+  }
+
+  /** Everything the analysis needs about how this match actually went. */
+  private writeTelemetry(reason: 'lastStanding' | 'timeLimit') {
+    const CONQUEST_BONUS_PER_KILL = 2;   // CONQUEST_INCOME_BONUS in constants.js
+
+    recordMatch({
+      matchId: this.roomId,
+      mode: this.sim.state.mode,
+      endedAt: new Date().toISOString(),
+      durationMs: Math.round(this.sim.state.time),
+      reason,
+      humanCount: this.everHuman.size,
+      players: [...this.sim.state.players.values()].map((p: any) => {
+        const elim = this.eliminations.get(p.id);
+        return {
+          seat: p.seat,
+          name: p.name,
+          isBot: p.isBot,
+          wasHuman: this.everHuman.has(p.id),
+          xp: Math.round(p.base.xpEarned),
+          level: p.base.level,
+          alive: p.alive,
+          eliminatedAtMs: elim ? Math.round(elim.atMs) : null,
+          eliminatedBy: elim?.by ?? null,
+          // Derived from the permanent income bonus each conquest grants.
+          conquests: Math.round((p.base.conquestGoldBonus ?? 0) / CONQUEST_BONUS_PER_KILL),
+        };
+      }),
+      samples: this.samples,
+    });
+  }
+
   private checkMatchOver() {
     const decided = this.sim.matchResult();
 
@@ -317,7 +401,7 @@ export class ArenaRoom extends Room {
     // the server ever stalls, and the client shows a countdown derived from
     // simulation time — using anything else would let the displayed clock and
     // the actual deadline disagree.
-    const timedUp = this.sim.state.time >= MATCH_LIMIT_MS;
+    const timedUp = this.sim.state.time >= config.matchLimitMs;
     if (!decided && !timedUp) return;
 
     this.phase = 'ended';
@@ -329,8 +413,18 @@ export class ArenaRoom extends Room {
       standings,
     });
 
-    const reason = decided ? 'lastStanding' : 'timeLimit';
+    const reason: 'lastStanding' | 'timeLimit' = decided ? 'lastStanding' : 'timeLimit';
     matchesCompleted.inc({ reason });
+
+    // A final sample, then write the record. Wrapped so a telemetry problem can
+    // never stop a match from ending properly for the players in it.
+    try {
+      this.nextSampleAt = 0;
+      this.maybeSample();
+      this.writeTelemetry(reason);
+    } catch (err) {
+      log.warn('telemetry failed', { room: this.roomId, err: String((err as Error)?.message ?? err) });
+    }
     log.info('match over', {
       room: this.roomId, reason,
       ticks: this.tickCount,

@@ -1,0 +1,82 @@
+# Playtest stack — get 8 real people playing, today, without renting anything.
+#
+#   ./infra/playtest.sh
+#
+# HOW IT WORKS
+#
+# Two Cloudflare Tunnels expose your local containers to the internet on
+# temporary public HTTPS addresses. No server, no domain, no DNS. Cloudflare
+# terminates TLS for you, which matters because browsers refuse plain `ws://`
+# from an HTTPS page — so a tunnel is not just convenient, it is the shortest
+# path to a working `wss://` connection.
+#
+# Your machine is easily fast enough: the load test measured ~296 matches per
+# core, and a playtest is one match.
+#
+# The addresses change every run and stop when you stop the script — which is
+# exactly what you want for a session with friends rather than a public launch.
+
+services:
+
+  server:
+    build:
+      context: .
+      dockerfile: infra/server.Dockerfile
+    volumes:
+      - ./packages:/app/packages
+      - ./apps/server/src:/app/apps/server/src
+      - ./apps/server/test:/app/apps/server/test
+      # Telemetry lands here on YOUR machine, so it survives the containers.
+      - ./data:/app/data
+      - /app/node_modules
+      - /app/apps/server/node_modules
+    environment:
+      - PORT=2567
+      - NODE_ENV=development
+      - NODE_NAME=playtest
+      - LOG_LEVEL=info
+      - TELEMETRY_DIR=/app/data
+      # Deliberately NOT setting ALLOWED_ORIGINS: the tunnel address is random
+      # each run, so pinning it would break every restart. Fine for a private
+      # session with friends; never do this for a public deployment.
+    expose:
+      - "2567"
+
+  client:
+    build:
+      context: .
+      dockerfile: infra/client.Dockerfile
+    volumes:
+      - ./packages:/app/packages
+      - ./apps/client/src:/app/apps/client/src
+      - ./apps/client/index.html:/app/apps/client/index.html
+      - ./apps/client/vite.config.js:/app/apps/client/vite.config.js
+      - /app/node_modules
+      - /app/apps/client/node_modules
+    environment:
+      - CHOKIDAR_USEPOLLING=true
+      # Filled in by playtest.sh once the server's tunnel address is known.
+      - VITE_SERVER_URL=${VITE_SERVER_URL:-ws://localhost:2567}
+      # Vite blocks requests whose Host header it does not recognise; the tunnel
+      # sends its own hostname, so allow any.
+      - VITE_ALLOWED_HOSTS=all
+    expose:
+      - "5173"
+    depends_on:
+      - server
+
+  # ── Public address for the game server ────────────────────────────────────
+  tunnel-server:
+    image: cloudflare/cloudflared:latest
+    command: tunnel --no-autoupdate --url http://server:2567
+    depends_on:
+      - server
+    restart: unless-stopped
+
+  # ── Public address for the website ────────────────────────────────────────
+  tunnel-client:
+    image: cloudflare/cloudflared:latest
+    command: tunnel --no-autoupdate --url http://client:5173
+    depends_on:
+      - client
+    restart: unless-stopped

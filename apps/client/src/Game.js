@@ -121,6 +121,7 @@ export class Game {
     conn.onWelcome((msg) => {
       this._world.setLocalId(msg.youAre);
       this._seat = msg.seat;
+      this._matchId = msg.matchId ?? null;
       console.info(`[nexus] you are ${msg.youAre} (seat ${msg.seat + 1}) in a ${msg.mode} match`);
     });
 
@@ -365,7 +366,74 @@ export class Game {
           : `${top?.name ?? 'Another player'} took the match.`);
 
     this._renderStandings(result.standings ?? [], result.winner);
+    this._showFeedback(won);
     document.getElementById('gameover').classList.add('vis');
+  }
+
+  /**
+   * Ask the player how the match went.
+   *
+   * Playtest feedback is worth far more when it arrives while the match is still
+   * fresh, so it lives on the scoreboard rather than in a form somewhere else.
+   * Anonymous, one tap, and the answer carries context (did they win, how long
+   * did they last, what was their ping) so a complaint can be read fairly —
+   * "boring" from someone eliminated at minute three means something different
+   * from "boring" from the winner.
+   */
+  _showFeedback(won) {
+    const panel = document.getElementById('feedback');
+    if (!panel || this._feedbackWired) { panel?.classList.add('vis'); return; }
+    this._feedbackWired = true;
+
+    let rating = 0;
+    const stars = [...panel.querySelectorAll('.fb-star')];
+    const sendBtn = document.getElementById('fb-send');
+
+    for (const star of stars) {
+      star.addEventListener('click', () => {
+        rating = Number(star.dataset.rating);
+        for (const s of stars) s.classList.toggle('sel', Number(s.dataset.rating) <= rating);
+      });
+    }
+
+    sendBtn?.addEventListener('click', async () => {
+      if (!rating) {
+        // Nudge rather than block — a rating with no comment is still useful.
+        stars.forEach(s => s.classList.add('sel'));
+        setTimeout(() => stars.forEach(s => s.classList.remove('sel')), 180);
+        return;
+      }
+      sendBtn.disabled = true;
+
+      const me = this._world.players.get(this._world.playerId);
+      const body = {
+        matchId: this._matchId ?? null,
+        rating,
+        comment: document.getElementById('fb-comment')?.value ?? '',
+        context: {
+          won: !!won,
+          survivedMs: me?.alive ? this._world.time : (this._eliminatedAt ?? null),
+          ping: Math.round(this._conn?.ping ?? 0),
+        },
+      };
+
+      try {
+        // The backend is on a different domain, so this is a cross-origin POST —
+        // the server allows it only from the approved frontend.
+        await fetch(`${SERVER_URL.replace(/^ws/, 'http')}/feedback`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+      } catch (err) {
+        // Never let a failed submission spoil the moment; it is not important
+        // enough to show the player an error.
+        console.debug('[nexus] feedback not sent:', err);
+      }
+      panel.classList.add('sent');
+    });
+
+    panel.classList.add('vis');
   }
 
   /** Final scoreboard: who finished where, and how much XP they earned. */
@@ -400,9 +468,18 @@ export class Game {
 
     this._conn?.close();
 
-    for (const id of ['gameover', 'spectate-banner', 'spectate-tag', 'go-standings', 'pause-modal', 'spec-modal']) {
+    for (const id of ['gameover', 'spectate-banner', 'spectate-tag', 'go-standings', 'pause-modal', 'spec-modal', 'feedback']) {
       document.getElementById(id)?.classList.remove('vis');
     }
+    // Let them rate the next match too.
+    const fb = document.getElementById('feedback');
+    fb?.classList.remove('sent');
+    fb?.querySelectorAll('.fb-star').forEach(s => s.classList.remove('sel'));
+    const fbSend = document.getElementById('fb-send');
+    if (fbSend) fbSend.disabled = false;
+    const fbComment = document.getElementById('fb-comment');
+    if (fbComment) fbComment.value = '';
+    this._eliminatedAt = null;
 
     // A brand-new world and selection — stale entity ids from the last match
     // must never leak into the next one.
@@ -457,6 +534,7 @@ export class Game {
     if (!me || me.alive) return;
 
     this._spectating = true;
+    this._eliminatedAt = this._world.time;   // for feedback context
     this._input.setEnabled(false);
     this._input.focusFree();
     this._selection.clear();

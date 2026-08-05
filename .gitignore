@@ -13,3 +13,4 @@ infra/.env
 infra/smoke-screenshot.png
 *.log
 .DS_Store
+data/

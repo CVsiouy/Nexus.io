@@ -36,6 +36,8 @@ export const RECONNECT_GRACE_MS = 90 * 1000;
 /** Sent once on join: who you are and what match you're in. */
 export interface WelcomeMessage {
   protocol: number;
+  /** Identifies this match, so feedback and telemetry can be joined up. */
+  matchId: string;
   /** The in-game owner id of your base, e.g. "p3". Everything you own carries it. */
   youAre: string;
   /** Your seat index 0..7. */
