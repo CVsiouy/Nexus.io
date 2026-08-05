@@ -1,0 +1,34 @@
+# Caddy config baked into the standalone frontend image
+# (infra/client.prod.Dockerfile).
+#
+# Plain HTTP on :80 with no TLS, because this image is meant to sit BEHIND
+# something that already terminates TLS — the main Caddy in docker-compose.prod,
+# or a platform load balancer. Handling certificates in two places at once
+# causes more problems than it solves.
+:80 {
+	root * /srv
+	file_server
+	encode zstd gzip
+
+	# Single-page app: unknown paths serve index.html rather than 404.
+	try_files {path} /index.html
+
+	# Hashed asset filenames can be cached forever…
+	@hashed path /assets/*
+	header @hashed Cache-Control "public, max-age=31536000, immutable"
+
+	# …but index.html must not be, or players keep running an old client after
+	# a deploy and hit protocol mismatches.
+	@index path / /index.html
+	header @index Cache-Control "no-cache"
+
+	header {
+		X-Content-Type-Options "nosniff"
+		-Server
+	}
+
+	log {
+		output stdout
+		format json
+	}
+}

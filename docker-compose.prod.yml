@@ -1,0 +1,80 @@
+# Production stack. Run with:
+#
+#   docker compose -f docker-compose.prod.yml --env-file infra/.env up -d
+#
+# or just `./infra/deploy.sh`, which does that plus the safety checks.
+#
+# Differences from the development compose file: no bind-mounts (the images are
+# self-contained), TLS in front, resource limits, log rotation, and restart
+# policies so a crash or a reboot brings everything back.
+
+services:
+
+  # ── TLS + reverse proxy ────────────────────────────────────────────────────
+  # The only container exposed to the internet. Gets and renews Let's Encrypt
+  # certificates automatically.
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./infra/Caddyfile:/etc/caddy/Caddyfile:ro
+      # Certificates live here. If you lose this volume Caddy re-requests them,
+      # and Let's Encrypt rate-limits that — so keep it.
+      - caddy_data:/data
+      - caddy_config:/config
+      # Only used if you self-host the frontend rather than using a CDN.
+      - ./apps/client/dist:/srv:ro
+    environment:
+      - ACME_EMAIL=${ACME_EMAIL:?ACME_EMAIL is required for automatic TLS}
+      - SERVER_DOMAIN=${SERVER_DOMAIN:?SERVER_DOMAIN is required}
+      - FRONTEND_DOMAIN=${FRONTEND_DOMAIN:-localhost}
+    depends_on:
+      - server
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+  # ── The game server ───────────────────────────────────────────────────────
+  # Not exposed directly; only Caddy can reach it.
+  server:
+    build:
+      context: .
+      dockerfile: infra/server.prod.Dockerfile
+    image: nexus-server:${TAG:-latest}
+    restart: unless-stopped
+    expose:
+      - "2567"
+    environment:
+      - NODE_ENV=production
+      - PORT=2567
+      - NODE_NAME=${NODE_NAME:-node1}
+      - REGION=${REGION:-eu}
+      - LOG_FORMAT=json
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - METRICS_ENABLED=true
+      # Which website may connect. Without this, anyone can host a copy of the
+      # client and spend your bandwidth.
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:?ALLOWED_ORIGINS is required in production}
+      - SENTRY_DSN=${SENTRY_DSN:-}
+    deploy:
+      resources:
+        limits:
+          # One Node process uses one core. Capping it means a runaway room
+          # cannot starve Caddy or the host itself.
+          cpus: "${SERVER_CPUS:-2.0}"
+          memory: ${SERVER_MEMORY:-1g}
+    logging:
+      driver: json-file
+      options: { max-size: "50m", max-file: "5" }
+    # Give in-progress matches time to finish on shutdown rather than cutting
+    # eight people off. Matches are capped at 20 minutes; this waits 2 for the
+    # graceful drain, which is enough for the server to stop accepting joins
+    # and close cleanly.
+    stop_grace_period: 2m
+
+volumes:
+  caddy_data:
+  caddy_config:

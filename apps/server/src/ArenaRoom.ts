@@ -1,6 +1,13 @@
 import { Room, Client } from '@colyseus/core';
 // @ts-expect-error — the simulation is plain JavaScript by design (see the plan).
 import { Simulation } from '@nexus/sim';
+import { log } from './log.js';
+import { config } from './config.js';
+import {
+  tickDuration, encodeDuration, roomsActive, playersConnected, botsActive,
+  snapshotBytes, snapshotsSent, commands, roomErrors, matchesCompleted,
+  joins, disconnects, applyDelta,
+} from './metrics.js';
 import {
   validateCommand, encodeSnapshot, PROTOCOL_VERSION, TICK_MS, SNAPSHOT_EVERY_TICKS,
   COMMAND_RATE_LIMIT, SEATS, MATCH_LIMIT_MS, RECONNECT_GRACE_MS, MSG,
@@ -47,10 +54,21 @@ export class ArenaRoom extends Room {
   /** Which owner id ("p3") each connected client controls. */
   private seatOf = new Map<string, string>();
 
+  /** This room's own contribution to the process-wide gauges. */
+  private lastPlayers = 0;
+  private lastBots = 0;
+
   onCreate(options: { mode?: 'ffa' | 'team' | 'mining' }) {
     const mode = options?.mode ?? 'ffa';
 
-    this.sim = new Simulation({ mode, logger: console });
+    this.sim = new Simulation({
+      mode,
+      logger: {
+        error: (m: string) => { roomErrors.inc(); log.error(m, { room: this.roomId }); },
+        warn:  (m: string) => log.warn(m, { room: this.roomId }),
+      },
+    });
+    roomsActive.inc();
     this.startedAt = Date.now();
     this.setMetadata({ mode, players: 0 });
 
@@ -73,15 +91,36 @@ export class ArenaRoom extends Room {
       for (const key of this.budgets.keys()) this.budgets.set(key, COMMAND_RATE_LIMIT);
     }, 1000);
 
-    console.log(`[room ${this.roomId}] created (${mode})`);
+    this.updateGauges();
+    log.info('room created', { room: this.roomId, mode });
   }
 
   // ── Joining and leaving ────────────────────────────────────────────────────
+
+  /**
+   * Runs before a client is allowed in. Rejecting here is much cheaper than
+   * admitting them and cleaning up afterwards.
+   */
+  onAuth(_client: Client, _options: unknown, request: any) {
+    // Only our own website may connect. Without this, anyone can host a copy of
+    // the client on their own domain, point it at these servers, and we pay the
+    // bandwidth for their traffic.
+    if (config.allowedOrigins.length > 0) {
+      const origin = request?.headers?.origin;
+      if (!origin || !config.allowedOrigins.includes(origin)) {
+        joins.inc({ result: 'badOrigin' });
+        log.warn('refused a connection from an unapproved origin', { origin: String(origin) });
+        throw new Error('This game server does not serve that website.');
+      }
+    }
+    return true;
+  }
 
   onJoin(client: Client, options: { name?: string; protocol?: number }) {
     if (options?.protocol !== PROTOCOL_VERSION) {
       // Better to refuse clearly at the door than to connect and then misbehave
       // in confusing ways once the message shapes turn out not to match.
+      joins.inc({ result: 'protocolMismatch' });
       throw new Error(
         `Protocol mismatch: server speaks v${PROTOCOL_VERSION}, client sent v${options?.protocol}. ` +
         `Reload the page to get the current version.`
@@ -89,7 +128,8 @@ export class ArenaRoom extends Room {
     }
 
     const player = this.sim.claimSeat(client.sessionId, options?.name);
-    if (!player) throw new Error('This match is full.');
+    if (!player) { joins.inc({ result: 'full' }); throw new Error('This match is full.'); }
+    joins.inc({ result: 'ok' });
 
     this.seatOf.set(client.sessionId, player.id);
     this.budgets.set(client.sessionId, COMMAND_RATE_LIMIT);
@@ -109,8 +149,11 @@ export class ArenaRoom extends Room {
     client.send(MSG.SNAPSHOT, new Uint8Array(encodeSnapshot(this.sim.getSnapshot(), true)));
 
     this.broadcastRoster();
-    this.setMetadata({ players: this.seatOf.size });
-    console.log(`[room ${this.roomId}] ${player.name} joined as ${player.id} (${this.seatOf.size}/${SEATS})`);
+    this.updateGauges();
+    log.info('player joined', {
+      room: this.roomId, owner: player.id, seat: player.seat,
+      players: this.seatOf.size, of: SEATS,
+    });
   }
 
   async onLeave(client: Client, consented: boolean) {
@@ -120,7 +163,9 @@ export class ArenaRoom extends Room {
     // and their enemies don't get a free kill while they reconnect.
     this.sim.releaseSeat(client.sessionId);
     this.broadcastRoster();
-    console.log(`[room ${this.roomId}] ${ownerId} left (consented=${consented}) — AI took over`);
+    this.updateGauges();
+    disconnects.inc({ kind: consented ? 'consented' : 'dropped' });
+    log.info('player left — AI took over', { room: this.roomId, owner: ownerId, consented });
 
     if (consented) { this.forget(client); return; }
 
@@ -142,12 +187,36 @@ export class ArenaRoom extends Room {
         });
         client.send(MSG.SNAPSHOT, new Uint8Array(encodeSnapshot(this.sim.getSnapshot(), true)));
         this.broadcastRoster();
-        console.log(`[room ${this.roomId}] ${ownerId} reconnected`);
+        this.updateGauges();
+        disconnects.inc({ kind: 'reconnected' });
+        log.info('player reconnected', { room: this.roomId, owner: ownerId });
       }
     } catch {
       this.forget(client);
-      console.log(`[room ${this.roomId}] ${ownerId} did not return — seat freed`);
+      disconnects.inc({ kind: 'abandoned' });
+      log.info('player did not return — seat freed', { room: this.roomId, owner: ownerId });
     }
+  }
+
+  /**
+   * Keep the process-wide gauges in step with reality.
+   *
+   * These count across EVERY room in the process, so this room may only ever
+   * adjust them by its own delta. Calling .set() here would make one room's
+   * numbers overwrite all the others — and a room closing would report zero
+   * players for a machine that still had hundreds.
+   */
+  private updateGauges() {
+    this.setMetadata({ players: this.seatOf.size });
+
+    const players = this.seatOf.size;
+    const bots = this.sim.botIds().length;
+
+    applyDelta(playersConnected, players - this.lastPlayers);
+    applyDelta(botsActive, bots - this.lastBots);
+
+    this.lastPlayers = players;
+    this.lastBots = bots;
   }
 
   /** Put a returning player back on the exact base they left, if it still lives. */
@@ -163,7 +232,7 @@ export class ArenaRoom extends Room {
   private forget(client: Client) {
     this.seatOf.delete(client.sessionId);
     this.budgets.delete(client.sessionId);
-    this.setMetadata({ players: this.seatOf.size });
+    this.updateGauges();
   }
 
   // ── Commands ───────────────────────────────────────────────────────────────
@@ -173,13 +242,14 @@ export class ArenaRoom extends Room {
 
     // 1. Flood protection, before we do any work at all.
     const budget = this.budgets.get(client.sessionId) ?? 0;
-    if (budget <= 0) return;
+    if (budget <= 0) { commands.inc({ result: 'ratelimited' }); return; }
     this.budgets.set(client.sessionId, budget - 1);
 
     // 2. Shape validation. This is untrusted input from a stranger's browser,
     //    so anything not explicitly allowed is dropped.
     const cmd: Command | null = validateCommand(raw);
     if (!cmd) {
+      commands.inc({ result: 'malformed' });
       client.send(MSG.REJECTED, { cmd: String((raw as any)?.t ?? '?'), reason: 'malformed command' });
       return;
     }
@@ -191,6 +261,7 @@ export class ArenaRoom extends Room {
     // 4. The simulation decides whether it's actually allowed — it is the only
     //    thing that knows the gold, the ownership and the game state.
     const result = this.sim.applyCommand(ownerId, cmd);
+    commands.inc({ result: result.ok ? 'accepted' : 'refused' });
     if (!result.ok) client.send(MSG.REJECTED, { cmd: cmd.t, reason: result.reason });
   }
 
@@ -200,7 +271,12 @@ export class ArenaRoom extends Room {
     if (this.phase !== 'live') return;
 
     this.tickCount++;
+
+    // The health signal that matters most: if this creeps toward the 50ms
+    // budget, matches are about to start running slow for everyone on this box.
+    const t0 = performance.now();
     this.sim.step(TICK_MS);
+    tickDuration.observe(performance.now() - t0);
 
     const events = this.sim.drainEvents();
 
@@ -216,8 +292,16 @@ export class ArenaRoom extends Room {
       //
       // Binary rather than JSON: measured at 18x smaller, because JSON repeats
       // every key name on every entity and prints floats at full precision.
+      const e0 = performance.now();
       const bytes = new Uint8Array(encodeSnapshot(this.sim.getSnapshot(), keyframe));
+      encodeDuration.observe(performance.now() - e0);
+
       this.broadcast(MSG.SNAPSHOT, bytes);
+
+      // Counted once per recipient, since that is what the bandwidth bill is.
+      snapshotBytes.inc(bytes.byteLength * Math.max(1, this.seatOf.size));
+      snapshotsSent.inc({ kind: keyframe ? 'keyframe' : 'delta' });
+
       if (events.length) this.broadcast(MSG.EVENTS, events);
     } else if (events.length) {
       this.broadcast(MSG.EVENTS, events);
@@ -245,7 +329,13 @@ export class ArenaRoom extends Room {
       standings,
     });
 
-    console.log(`[room ${this.roomId}] match over (${decided ? 'last standing' : 'time limit'})`);
+    const reason = decided ? 'lastStanding' : 'timeLimit';
+    matchesCompleted.inc({ reason });
+    log.info('match over', {
+      room: this.roomId, reason,
+      ticks: this.tickCount,
+      winner: standings.find((s: any) => s.alive)?.name ?? 'none',
+    });
 
     // Give clients time to show the scoreboard, then close the room. Players
     // requeue into a fresh match rather than this one resetting.
@@ -257,6 +347,12 @@ export class ArenaRoom extends Room {
   }
 
   onDispose() {
-    console.log(`[room ${this.roomId}] disposed after ${this.tickCount} ticks`);
+    roomsActive.dec();
+    // Remove only this room's own contribution, leaving other rooms untouched.
+    applyDelta(playersConnected, -this.lastPlayers);
+    applyDelta(botsActive, -this.lastBots);
+    this.lastPlayers = 0;
+    this.lastBots = 0;
+    log.info('room disposed', { room: this.roomId, ticks: this.tickCount });
   }
 }

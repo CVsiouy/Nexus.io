@@ -6,6 +6,9 @@ node_modules/
 dist/
 **/dist/
 
+# Real deployment config — holds your domains. Never commit.
+infra/.env
+
 # Local tooling artefacts
 infra/smoke-screenshot.png
 *.log

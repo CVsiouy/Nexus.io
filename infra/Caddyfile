@@ -1,0 +1,81 @@
+# Caddy — the front door in production.
+#
+# WHAT THIS SOLVES
+#
+# Browsers refuse plain `ws://` connections from a page served over HTTPS, so
+# the backend needs a TLS certificate. Obtaining and renewing certificates is
+# normally a fiddly chore; Caddy does it automatically from Let's Encrypt, for
+# free, and renews before expiry without being asked. That is the entire reason
+# it is here.
+#
+# It terminates TLS and forwards plain HTTP/WebSocket to the game server over
+# the internal Docker network, so the server itself never touches certificates.
+#
+# Domains come from environment variables so this file is never edited per host.
+# Set them in infra/.env — see DEPLOYMENT.md.
+
+{
+	# Where Let's Encrypt sends expiry warnings. Required for automatic certs.
+	email {$ACME_EMAIL}
+}
+
+# ── The game server (WebSocket) ──────────────────────────────────────────────
+{$SERVER_DOMAIN} {
+	# Caddy performs the WebSocket Upgrade handshake automatically — no special
+	# configuration needed, unlike nginx.
+	reverse_proxy server:2567 {
+		# Long-lived connections: a match runs up to 20 minutes, and a player
+		# sitting idle still holds their socket open.
+		transport http {
+			read_timeout 30m
+			write_timeout 30m
+		}
+	}
+
+	# /metrics and /ready expose internals (room counts, error rates) and must
+	# not be public. Blocked at the edge; scrape them over the private network
+	# or an SSH tunnel instead.
+	@internal path /metrics /ready
+	respond @internal 404
+
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		-Server
+	}
+
+	log {
+		output stdout
+		format json
+	}
+}
+
+# ── The frontend (only if self-hosting instead of using Cloudflare Pages) ────
+# Leave FRONTEND_DOMAIN unset to skip this entirely — the recommended setup puts
+# the frontend on a CDN, which is free, faster worldwide, and nothing to manage.
+{$FRONTEND_DOMAIN:localhost} {
+	root * /srv
+	file_server
+	encode zstd gzip
+	try_files {path} /index.html
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+	# The bundle filename contains a content hash, so it can be cached forever.
+	@hashed path /assets/*
+	header @hashed Cache-Control "public, max-age=31536000, immutable"
+	# index.html must never be cached, or players keep an old client after a deploy.
+	@index path / /index.html
+	header @index Cache-Control "no-cache"
+
+	log {
+		output stdout
+		format json
+	}
+}
