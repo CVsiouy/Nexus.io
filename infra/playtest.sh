@@ -74,7 +74,13 @@ curl -fsS -o /dev/null "$CLIENT_URL" 2>/dev/null && ok "website is reachable" \
   || printf '  \033[33m!\033[0m website not answering yet — give it a few seconds\n'
 
 # ── 4. Share this ───────────────────────────────────────────────────────────
-cat <<EOF
+# Also written to a file, so the link is recoverable even if the terminal
+# scrolls or you close it by accident.
+mkdir -p data
+printf '%s\n' "$CLIENT_URL" > data/playtest-link.txt
+
+banner() {
+  cat <<EOF
 
 ╔════════════════════════════════════════════════════════════════════╗
    SEND THIS LINK TO YOUR PLAYERS
@@ -85,17 +91,40 @@ cat <<EOF
    bots, so it works with any number of people — you do not need all 8.
 ╚════════════════════════════════════════════════════════════════════╝
 
-  Watch it live:
-    $COMPOSE logs -f server
+  Also saved to:  data/playtest-link.txt
 
-  After the session, see what actually happened:
-    $COMPOSE run --rm server node ../loadtest/src/analyse.mjs
+  Watch the game live — in a SECOND terminal, not this one:
+    ./nexus.sh logs
 
-  What to look for is in PLAYTEST.md.
-
-  Ctrl-C to stop. The addresses die with it.
+  After the session:
+    ./nexus.sh analyse
 
 EOF
+}
 
-# Stay alive so the tunnels stay up; the trap cleans up on Ctrl-C.
-$COMPOSE logs -f server
+banner
+
+printf '\033[1;32m  ● Playtest is LIVE. Leave this window open.\033[0m\n'
+printf '    Closing it, or pressing Ctrl-C, ends the session for everyone.\n\n'
+
+# Stay alive so the tunnels stay up. Deliberately NOT streaming server logs:
+# they scroll the share link off the screen within seconds and make it look
+# like the script has hung. Use `./nexus.sh logs` in another terminal instead.
+#
+# Re-prints the link every few minutes so it is always visible, and checks the
+# tunnel is still healthy rather than silently sitting on a dead address.
+mins=0
+while true; do
+  sleep 60
+  mins=$((mins + 1))
+
+  if ! curl -fsS --max-time 15 "$SERVER_URL/health" >/dev/null 2>&1; then
+    printf '\033[1;33m  ! %sm — the game server is not answering through its tunnel.\033[0m\n' "$mins"
+    printf '    Check: ./nexus.sh logs\n'
+  elif [ $((mins % 5)) -eq 0 ]; then
+    banner
+    printf '\033[1;32m  ● Still live (%sm). Players joined so far are in ./nexus.sh logs\033[0m\n\n' "$mins"
+  else
+    printf '  ● %sm — live · %s\n' "$mins" "$CLIENT_URL"
+  fi
+done
