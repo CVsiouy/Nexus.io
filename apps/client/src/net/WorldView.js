@@ -164,7 +164,6 @@ export class WorldView {
       vb.level = nb.level;
       vb.mineLevel = nb.mineLevel;
       vb.miningBonus = nb.miningBonus;
-      vb.conquestGoldBonus = nb.conquestGoldBonus;
       vb.goldMult = nb.goldMult;
       vb.garrison = nb.garrison;
       vb.skillPoints = nb.skillPoints;

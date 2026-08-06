@@ -21,7 +21,10 @@ export class Base {
     this.goldMult        = 1;             // mining multiplier (raised by the Prospector spec)
     this.mineLevel       = 0;             // purchased mining upgrades
     this.miningBonus     = 0;             // +gold/sec from those upgrades
-    this.conquestGoldBonus = 0;           // permanent +gold/sec per rival destroyed
+    // How many rival mother bases this base has destroyed. Purely a record —
+    // it grants no ongoing benefit. (It replaced `conquestGoldBonus`, which
+    // gave permanent stacking income and produced runaway leaders.)
+    this.conquests         = 0;
     this.lastAttackerId  = null;          // owner id of the last soldier to damage this base (kill credit)
     this.xp              = 0;             // spendable XP (unused for now; kept for parity)
     this.xpEarned        = 0;             // lifetime XP earned (drives leveling)

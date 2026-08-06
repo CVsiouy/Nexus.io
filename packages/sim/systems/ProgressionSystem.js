@@ -7,9 +7,23 @@ import {
 import { Boss } from '../entities.js';
 import { randPick } from '../utils/helpers.js';
 
-/** Current passive gold income (per second) for a base — used by economy + HUD. */
+/**
+ * Current passive gold income (per second) for a base — used by economy + HUD.
+ *
+ * Income comes only from the base itself and from mining upgrades you paid for.
+ * Destroying a rival grants a one-time lump sum (CONQUEST_GOLD_LUMP) and no
+ * ongoing income, so nobody can compound kills into a permanently better economy.
+ *
+ * Every term is defaulted: this is called on both the server's real Base objects
+ * and on decoded snapshot data in the browser, and a single missing field here
+ * would produce NaN, which then poisons base.gold on the very next tick and
+ * silently shows every player 0 gold rather than throwing anything.
+ */
 export function goldRate(base) {
-  return (GOLD_PER_SEC + base.level * GOLD_PER_LEVEL + base.miningBonus + base.conquestGoldBonus) * base.goldMult;
+  const level   = base.level ?? 1;
+  const mining  = base.miningBonus ?? 0;
+  const mult    = base.goldMult ?? 1;
+  return (GOLD_PER_SEC + level * GOLD_PER_LEVEL + mining) * mult;
 }
 
 /** Gold cost of the next mining upgrade (null if maxed). */

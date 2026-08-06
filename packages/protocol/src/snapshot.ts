@@ -35,7 +35,19 @@
  * nothing downstream of it had to change.
  */
 
-export const SNAPSHOT_VERSION = 1;
+/**
+ * Bump this whenever the byte layout changes.
+ *
+ * The format is POSITIONAL — there are no field names on the wire — so a client
+ * decoding a newer frame with an older layout does not fail loudly, it reads
+ * every subsequent field from the wrong offset. The version check in
+ * decodeSnapshot is the only thing that turns that into a clear "reload the
+ * page" instead of a subtly corrupted world.
+ *
+ * v2: removed the per-base conquestGoldBonus (permanent stacking income was
+ *     replaced by a one-time flat bounty).
+ */
+export const SNAPSHOT_VERSION = 2;
 
 /** Map size. Must match WORLD_SIZE in packages/sim/constants.js. */
 const WORLD = 2800;
@@ -180,7 +192,6 @@ export function encodeSnapshot(snap: any, keyframe = false): ArrayBuffer {
       for (const u of b.unlocked) unlocked |= 1 << idx(UNIT_TYPES, u as any);
       w.u8(unlocked);
       w.u16(Math.round((b.miningBonus ?? 0) * 100));
-      w.u16(Math.round((b.conquestGoldBonus ?? 0) * 100));
       w.u16(Math.round((b.goldMult ?? 1) * 100));
     }
   }
@@ -326,7 +337,7 @@ export function decodeSnapshot(buffer: ArrayBuffer | Uint8Array, prev?: any): an
     }
 
     let name: string, color: number, maxHp: number, unlockedMask: number;
-    let miningBonus: number, conquestGoldBonus: number, goldMult: number;
+    let miningBonus: number, goldMult: number;
     let baseId: number, baseX: number, baseY: number;
     if (keyframe) {
       baseId = r.u16();
@@ -337,7 +348,6 @@ export function decodeSnapshot(buffer: ArrayBuffer | Uint8Array, prev?: any): an
       maxHp = r.u32();
       unlockedMask = r.u8();
       miningBonus = r.u16() / 100;
-      conquestGoldBonus = r.u16() / 100;
       goldMult = r.u16() / 100;
     } else {
       // Carried over from the last keyframe — these change rarely, so sending
@@ -350,7 +360,6 @@ export function decodeSnapshot(buffer: ArrayBuffer | Uint8Array, prev?: any): an
       maxHp = old?.base?.maxHp ?? 10000;
       unlockedMask = old?.__unlockedMask ?? 0b11;
       miningBonus = old?.base?.miningBonus ?? 0;
-      conquestGoldBonus = old?.base?.conquestGoldBonus ?? 0;
       goldMult = old?.base?.goldMult ?? 1;
     }
 
@@ -371,7 +380,7 @@ export function decodeSnapshot(buffer: ArrayBuffer | Uint8Array, prev?: any): an
         id: baseId, x: baseX, y: baseY,
         hp, maxHp, level, gold, xpEarned,
         rotation: 0,          // cosmetic; the client animates this itself
-        mineLevel, miningBonus, conquestGoldBonus, goldMult,
+        mineLevel, miningBonus, goldMult,
         garrison, skillPoints,
         specialization: SPECS[(flags >> 3) & 3] ?? null,
         spawnProtected: !!(flags & 4),

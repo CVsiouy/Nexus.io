@@ -537,7 +537,7 @@ function snapshotPlayer(p) {
       hp: b.hp, maxHp: b.maxHp, level: b.level, gold: b.gold,
       xpEarned: b.xpEarned, rotation: b.rotation,
       mineLevel: b.mineLevel, miningBonus: b.miningBonus,
-      conquestGoldBonus: b.conquestGoldBonus, goldMult: b.goldMult,
+      goldMult: b.goldMult,
       garrison: b.garrison, skillPoints: b.skillPoints,
       specialization: b.specialization, spawnProtected: b.spawnProtected,
       lastAttackedAt: b.lastAttackedAt,

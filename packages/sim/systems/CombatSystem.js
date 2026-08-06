@@ -2,7 +2,7 @@ import { dist2 } from '../utils/helpers.js';
 import { Projectile } from '../entities.js';
 import {
   ATTACK_RANGE, TURRET_DEFS, STRUCTURE_DMG_MULT, WALL_DMG_MULT, SOLDIER_RADIUS, WALL_CELL_SIZE,
-  CONQUEST_INCOME_BONUS, CONQUEST_GOLD_LUMP, CONQUEST_XP, KILL_XP,
+  CONQUEST_GOLD_LUMP, CONQUEST_XP, KILL_XP,
   EATABLE_DEFS, WILDLING_XP_BOUNTY, BASE_DEFENSE_RADIUS, DEFENDER_ATK_MULT, DEFENDER_DMG_TAKEN,
 } from '../constants.js';
 import { isStructureTarget, targetRadius } from './GroupSystem.js';
@@ -417,15 +417,23 @@ export class CombatSystem {
 
       player.alive = false;
 
-      // Credit the destroyer: claim the fallen base's mine (permanent income) + bounty.
+      // Credit the destroyer with a ONE-TIME bounty.
+      //
+      // This used to also grant permanent, stacking income (+2 gold/sec per
+      // kill). That compounded: each kill made the next one easier, so a single
+      // early kill could decide a 20-minute match. A flat lump sum still
+      // rewards aggression — 300 gold buys a serious army right now — without
+      // making the winner permanently richer than everyone else.
+      //
+      // The gold is deliberately NOT scaled by the victim's level: killing the
+      // leader paying double is itself a snowball vector. XP keeps its scaling
+      // because levels are capped and self-limiting.
       const killer = state.players.get(player.base.lastAttackerId);
       if (killer && killer.alive && killer.id !== player.id) {
-        const factor = 1 + player.base.level * 0.1;
-        const goldReward = Math.round(CONQUEST_GOLD_LUMP * factor);
-        killer.base.gold += goldReward;
-        killer.pendingXP += Math.round(CONQUEST_XP * factor);
-        killer.base.conquestGoldBonus += CONQUEST_INCOME_BONUS;
-        state.notify(`🏆 Rival base destroyed! Claimed their mine (+${CONQUEST_INCOME_BONUS}/s, +${goldReward} gold)`, 'success', killer.id);
+        killer.base.gold += CONQUEST_GOLD_LUMP;
+        killer.pendingXP += Math.round(CONQUEST_XP * (1 + player.base.level * 0.1));
+        killer.base.conquests += 1;
+        state.notify(`🏆 Rival base destroyed! +${CONQUEST_GOLD_LUMP} gold`, 'success', killer.id);
       }
 
       for (const [sid, sol] of state.soldiers)

@@ -365,7 +365,15 @@ export class ArenaRoom extends Room {
 
   /** Everything the analysis needs about how this match actually went. */
   private writeTelemetry(reason: 'lastStanding' | 'timeLimit') {
-    const CONQUEST_BONUS_PER_KILL = 2;   // CONQUEST_INCOME_BONUS in constants.js
+    // Kills per player, counted from the elimination events this room already
+    // recorded. This used to be derived by dividing the base's permanent income
+    // bonus by 2 — which broke the moment that bonus was removed, and did so
+    // SILENTLY (the field is typed `any`, so it just became 0 for everyone).
+    // Counting the actual events is both correct and immune to reward retunes.
+    const killsBy = new Map<string, number>();
+    for (const [, elim] of this.eliminations) {
+      if (elim.by) killsBy.set(elim.by, (killsBy.get(elim.by) ?? 0) + 1);
+    }
 
     recordMatch({
       matchId: this.roomId,
@@ -386,8 +394,7 @@ export class ArenaRoom extends Room {
           alive: p.alive,
           eliminatedAtMs: elim ? Math.round(elim.atMs) : null,
           eliminatedBy: elim?.by ?? null,
-          // Derived from the permanent income bonus each conquest grants.
-          conquests: Math.round((p.base.conquestGoldBonus ?? 0) / CONQUEST_BONUS_PER_KILL),
+          conquests: killsBy.get(p.id) ?? 0,
         };
       }),
       samples: this.samples,

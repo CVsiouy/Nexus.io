@@ -110,10 +110,20 @@ export const MINE_UPGRADE_GROWTH    = 1.7;  // cost multiplier per level (steepe
 export const MINE_BONUS_STEP        = 0.7;  // +gold/sec per upgrade (flattened)
 export const MAX_MINE_LEVEL         = 10;
 
-// ─── Conquest reward (destroy a rival mother base → claim its mine) ─────────────
-export const CONQUEST_INCOME_BONUS = 2;    // permanent +gold/sec per kill
-export const CONQUEST_GOLD_LUMP    = 120;  // one-time gold bounty (× victim level factor)
-export const CONQUEST_XP           = 180;  // one-time XP bounty (× victim level factor)
+// ─── Conquest reward (destroy a rival mother base) ─────────────────────────────
+//
+// A ONE-TIME payment, deliberately flat.
+//
+// This used to also grant CONQUEST_INCOME_BONUS: a permanent +2 gold/sec per
+// kill, which STACKED. That is a compounding reward — the first kill made you
+// richer, which made the second kill easier, which made you richer still — and
+// it is the classic recipe for a runaway leader who has decided the match by
+// minute eight while seven other people are still playing it.
+//
+// A flat lump sum rewards aggression without compounding: it buys you one good
+// army, not a permanently better economy.
+export const CONQUEST_GOLD_LUMP = 300;  // one-time gold bounty, flat
+export const CONQUEST_XP        = 180;  // one-time XP bounty (× victim level factor)
 
 // ─── Population & supply ──────────────────────────────────────────────────────
 // Big budgets so you can station large formations and still have troops to donate.
@@ -203,6 +213,91 @@ export const MINE_NODE_GOLD_PER_SOLDIER = 0.3; // extra gold/sec per soldier sta
 export const MINE_STATION_CAP    = 10;   // soldiers beyond this don't add more gold
 export const MINE_NODE_SPAWN_MS  = 9000; // a held node grows a grunt this often
 export const MINE_NODE_MIN_SEP   = 360;  // min spacing between nodes / from bases
+
+// ─── Bot decision-making ──────────────────────────────────────────────────────
+//
+// Bots run a "force budget": each think tick they work out how much army must
+// stay home to survive, and only the surplus above that is allowed to attack.
+// This is what stops a bot with one squad from throwing it at an enemy who has
+// three, and what stops a bot under attack from marching its defenders away.
+//
+// Committing to an attack is IRREVERSIBLE in this game (an attacking squad is
+// locked until its target dies or it is wiped), so the cost of guessing wrong
+// is high and these numbers are deliberately cautious.
+
+/**
+ * Net worth of a defending soldier versus an attacking one, derived from the
+ * stance bonuses so it can never drift out of sync with them.
+ *   attack 1.10x  and  damage taken 0.82x  →  1.10 / 0.82 ≈ 1.34
+ * So ~10 defenders can be expected to hold against ~13 attackers.
+ */
+export const DEFENDER_EDGE = DEFENDER_ATK_MULT / DEFENDER_DMG_TAKEN;
+
+/** Enemies this close to a base are pressing it right now. */
+export const BOT_THREAT_RADIUS = 420;
+
+/**
+ * A threat only counts as one if it is big enough to matter. Without this, a
+ * single cheap soldier parked outside a bot's base would pin it down for the
+ * rest of the match — the classic failure mode of "defend when threatened",
+ * and a strategy so cheap it would make the bots worse than the old ones.
+ *
+ * Threat must exceed BOTH a flat floor and a fraction of the bot's own army,
+ * so a scout is ignored whether the bot is small or large.
+ */
+export const BOT_THREAT_FLOOR = 4;
+export const BOT_THREAT_FRACTION = 0.12;
+
+/**
+ * Margin a bot wants over the force actually attacking it. Above 1 means it
+ * keeps more defenders than the raw maths demands.
+ */
+export const BOT_DEFENCE_SAFETY = { passive: 1.7, standard: 1.3, aggressive: 1.05 };
+
+/**
+ * How much a bot worries about the biggest enemy army that ISN'T attacking it
+ * yet. This is the term that answers "they have 3 squads and I have 1" — the
+ * threat is only potential, so it is weighted well below a real attack, but it
+ * is enough to stop a lone squad wandering off.
+ */
+export const BOT_CAUTION = { passive: 0.55, standard: 0.38, aggressive: 0.22 };
+
+/** A bot always keeps at least this many soldiers home, even in total peace. */
+export const BOT_MIN_HOME = { passive: 12, standard: 8, aggressive: 5 };
+
+/**
+ * Force advantage required before committing to an assault, over and above what
+ * the defender's edge already demands. Attacking into a prepared defence is a
+ * losing trade, so bots want a real edge before spending a locked squad.
+ */
+export const BOT_ATTACK_EDGE = { passive: 1.9, standard: 1.5, aggressive: 1.2 };
+
+/**
+ * Consecutive calm think-ticks before a bot will start an attack. Prevents a
+ * bot lurching out the instant a raider steps back, and gives a human room to
+ * feint — while the escalation below guarantees it cannot be stalled forever.
+ */
+export const BOT_PATIENCE = { passive: 5, standard: 3, aggressive: 1 };
+
+/**
+ * Anti-stalemate. Eight cautious bots must not sit and stare at each other
+ * until the match timer runs out, so their required attack advantage decays the
+ * longer they go without committing to anything.
+ */
+export const BOT_RESTLESS_AFTER = 45;     // think-ticks (~90s) before impatience starts
+export const BOT_RESTLESS_DECAY = 0.025;  // edge requirement lost per tick beyond that
+
+/**
+ * The floor must sit BELOW 1/DEFENDER_EDGE (~0.75), and that is not a rounding
+ * choice — it is the difference between a game and a staring contest.
+ *
+ * Population is capped, so eight even bots all plateau at a similar army size.
+ * If a bot always demanded more attackers than the enemy has defenders, no
+ * even matchup could ever be attacked and every match would run to the timer.
+ * Below this line a patient bot eventually commits at roughly equal numbers —
+ * a real gamble, which is the correct behaviour when waiting is also losing.
+ */
+export const BOT_RESTLESS_FLOOR = 0.55;
 
 // ─── Seats ────────────────────────────────────────────────────────────────────
 // A match has exactly SEAT_COUNT mother bases. Every seat is identical: it
