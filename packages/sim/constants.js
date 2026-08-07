@@ -37,7 +37,7 @@ export const BASE_HP          = 10000; // mother base is a fortress (all modes)
 // Killing one is worth permanent income, which makes the centre of the map
 // worth fighting over — and worth fighting over EARLY, since whoever takes a
 // boss compounds that advantage for the rest of the match.
-export const BOSS_HP           = 5000;
+export const BOSS_HP           = 14000;
 export const BOSS_COUNT        = 2;                 // start with two
 export const BOSS_FIRST_MS     = 3.5 * 60 * 1000;   // first appears at 3m30
 export const BOSS_STAGGER_MS   = 4 * 60 * 1000;     // the second, this much later
@@ -46,12 +46,19 @@ export const BOSS_SPREAD       = 260;               // how far each sits from ma
 /** Its wall: one ring, deliberately softer than a player's, never repaired. */
 export const BOSS_WALL_CELLS    = 12;
 export const BOSS_WALL_RADIUS   = 96;
-export const BOSS_WALL_CELL_HP  = 2500;
+export const BOSS_WALL_CELL_HP  = 5200;
 
-/** Its garrison: small, slow, and purely defensive. */
-export const BOSS_SQUAD_SIZE     = 5;
-export const BOSS_SQUAD_INTERVAL_MS = 55000;
-export const BOSS_MAX_SQUADS     = 2;    // caps the total defence at 10 soldiers
+/**
+ * Its garrison: purely defensive, but individually tougher than anything a
+ * player fields. Two squads of ordinary grunts made a boss a formality — one
+ * player squad could walk in and take it. These are elite guards, so cracking a
+ * boss is a real commitment rather than a detour.
+ */
+export const BOSS_SQUAD_SIZE     = 6;
+export const BOSS_SQUAD_INTERVAL_MS = 40000;
+export const BOSS_MAX_SQUADS     = 4;     // up to 24 guards, grown over ~2.5 min
+export const BOSS_SOLDIER_HP_MULT  = 2.4; // each guard is worth ~2.4 grunts of HP
+export const BOSS_SOLDIER_DMG_MULT = 1.7;
 
 /** Permanent income granted to whoever lands the killing blow. */
 export const BOSS_GOLD_REWARD = 2;       // gold/sec, forever — bounded by BOSS_COUNT
@@ -113,6 +120,16 @@ export const WALL_LAYER_GAP     = 30;   // distance between successive wall laye
 export const WALL_CELLS_BASE    = 10;   // cell capacity of the innermost ring
 export const WALL_CELLS_PER_LAYER = 3;  // extra capacity per outer ring
 export const WALL_CELL_SIZE     = 12;   // radius of a rendered hexagonal wall cell
+
+/**
+ * How many soldiers can work on one wall cell at the same time.
+ *
+ * A wall is a frontage, not a damage sponge. Without this cap every member of a
+ * 15-strong squad struck the same cell every tick, so walls took fifteen times
+ * the damage their frontage could deliver and broke almost instantly. Four is
+ * roughly how many bodies fit around one cell.
+ */
+export const WALL_ATTACKERS_MAX = 4;
 export const MAX_WALL_LAYERS    = 3;    // at most this many wall rings around a base
 // Walls auto-repair a fixed rate once they've gone this long without being hit.
 // Wall repair is deliberately slow: it waits TWICE as long as the mother base

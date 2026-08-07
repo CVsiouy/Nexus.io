@@ -1,7 +1,8 @@
 import { dist2 } from '../utils/helpers.js';
 import { Projectile } from '../entities.js';
 import {
-  ATTACK_RANGE, TURRET_DEFS, STRUCTURE_DMG_MULT, WALL_DMG_MULT, SOLDIER_RADIUS, WALL_CELL_SIZE,
+  ATTACK_RANGE, TURRET_DEFS, STRUCTURE_DMG_MULT, WALL_DMG_MULT, SOLDIER_RADIUS,
+  WALL_CELL_SIZE, WALL_ATTACKERS_MAX,
   CONQUEST_GOLD_LUMP, CONQUEST_XP, KILL_XP, BOSS_GOLD_REWARD, BOSS_XP_REWARD,
   EATABLE_DEFS, WILDLING_XP_BOUNTY, BASE_DEFENSE_RADIUS, DEFENDER_ATK_MULT, DEFENDER_DMG_TAKEN,
 } from '../constants.js';
@@ -51,7 +52,10 @@ export class CombatSystem {
       const base = state.resolve(g.targetId);
       if (!base || base.hp <= 0 || !isStructureTarget(state, base)) continue;
 
-      const layer = state.bases.has(base.id) ? outerBlockingLayer(base) : null;
+      // Bosses have walls too. This used to check `state.bases` only, so a
+      // boss's ring was never a valid target — attackers stood outside it
+      // unable to reach anything at all, and the boss was unkillable.
+      const layer = base.walls ? outerBlockingLayer(base) : null;
       if (layer) this._assaultWall(state, g, base, layer, dtMs, now);
       else       this._assaultBase(state, g, base, dtMs, now);
     }
@@ -72,13 +76,29 @@ export class CombatSystem {
     if (!near) return;
     const eff = ATTACK_RANGE + WALL_CELL_SIZE;
 
+    // Only so many soldiers can physically reach one wall cell at a time.
+    //
+    // Without this cap every member of a 15-strong squad struck the same cell
+    // on the same tick, so a wall took fifteen times the damage its frontage
+    // could possibly deliver and evaporated. A wall is a frontage: a handful of
+    // soldiers can work on a section and the rest must wait or find another.
+    //
+    // The nearest ones get the slots, which is also the sensible reading — they
+    // are the ones actually standing at it.
+    const contenders = [];
     for (const id of g.memberIds) {
       const s = state.soldiers.get(id);
-      if (!s || s.hp <= 0) continue;
-      if (s.atkCd > 0) continue;
-      if (dist2(s.position, near.pos) > eff * eff) continue;  // must be at the breach point
-      // NOTE: unlike the base, walls take damage even with enemy soldiers around.
+      if (!s || s.hp <= 0 || s.atkCd > 0) continue;
+      const d2 = dist2(s.position, near.pos);
+      if (d2 > eff * eff) continue;                        // must be at the breach point
+      contenders.push({ s, d2 });
+    }
+    contenders.sort((a, b) => a.d2 - b.d2);
 
+    const slots = Math.min(contenders.length, WALL_ATTACKERS_MAX);
+    for (let i = 0; i < slots; i++) {
+      const s = contenders[i].s;
+      // NOTE: unlike the base, walls take damage even with enemy soldiers around.
       forfeitProtection(state.players.get(s.ownerId));   // besieging walls is an attack too
       const destroyed = damageCell(base, layer, near.cell, this._siegeDamage(state, s), now);
       s.atkCd = STRIKE_CD;

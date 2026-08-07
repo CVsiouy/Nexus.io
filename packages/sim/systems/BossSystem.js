@@ -3,6 +3,7 @@ import {
   WORLD_SIZE, BOSS_COUNT, BOSS_FIRST_MS, BOSS_STAGGER_MS, BOSS_SPREAD,
   BOSS_WALL_CELLS, BOSS_WALL_RADIUS, BOSS_WALL_CELL_HP,
   BOSS_SQUAD_SIZE, BOSS_SQUAD_INTERVAL_MS, BOSS_MAX_SQUADS,
+  BOSS_SOLDIER_HP_MULT, BOSS_SOLDIER_DMG_MULT,
 } from '../constants.js';
 
 /**
@@ -105,6 +106,12 @@ export class BossSystem {
         boss.position.x + Math.cos(a) * r,
         boss.position.y + Math.sin(a) * r,
       );
+      // Elite guards. A boss defended by ordinary grunts was a formality — one
+      // player squad walked in and took it. These hit harder and take far more
+      // killing, so a boss is a commitment rather than a detour.
+      s.maxHp *= BOSS_SOLDIER_HP_MULT;
+      s.hp = s.maxHp;
+      s.damage *= BOSS_SOLDIER_DMG_MULT;
       state.soldiers.set(s.id, s);
       s.groupId = g.id;
       g.memberIds.push(s.id);

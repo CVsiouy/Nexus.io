@@ -100,6 +100,18 @@ export function solidAtAngle(layer, angle) {
  * legitimately through a breach must be free to move around inside; only the
  * act of passing through a standing section is forbidden.
  */
+/**
+ * Tolerance on the "was I outside?" test.
+ *
+ * This is not cosmetic. A soldier held at the wall gets placed exactly on the
+ * boundary, and recomputing its distance from those coordinates lands a hair
+ * UNDER the boundary through ordinary floating-point error. A strict `>=` then
+ * reads it as "already inside", stops blocking, and the soldier strolls through
+ * a wall that is fully intact — which is precisely the leak that let squads
+ * reach the boss with all twelve cells standing.
+ */
+const BOUNDARY_EPS = 1.0;
+
 export function crossesWall(base, layer, from, to) {
   const cx = base.position.x, cy = base.position.y;
   const rOut = layer.radius + WALL_CELL_SIZE * 0.6;
@@ -107,19 +119,24 @@ export function crossesWall(base, layer, from, to) {
   const dFrom = Math.hypot(from.x - cx, from.y - cy);
   const dTo = Math.hypot(to.x - cx, to.y - cy);
 
-  // Only an inward crossing of the ring boundary counts.
-  if (!(dFrom >= rOut && dTo < rOut)) return false;
+  // Only an inward crossing of the ring boundary counts. The epsilon keeps a
+  // soldier pinned ON the boundary counted as outside.
+  if (!(dFrom >= rOut - BOUNDARY_EPS && dTo < rOut)) return false;
 
   // Check the wall at the angle where the crossing happens.
   return solidAtAngle(layer, Math.atan2(to.y - cy, to.x - cx));
 }
 
-/** Push a point back to just outside `layer`, keeping its bearing from the base. */
+/**
+ * Push a point back to just outside `layer`, keeping its bearing from the base.
+ * Placed a little beyond the boundary rather than exactly on it, so the next
+ * tick unambiguously sees it as outside.
+ */
 export function pushOutside(base, layer, pos) {
   const cx = base.position.x, cy = base.position.y;
   const dx = pos.x - cx, dy = pos.y - cy;
   const d = Math.hypot(dx, dy) || 1;
-  const rOut = layer.radius + WALL_CELL_SIZE * 0.6;
+  const rOut = layer.radius + WALL_CELL_SIZE * 0.6 + BOUNDARY_EPS;
   return { x: cx + (dx / d) * rOut, y: cy + (dy / d) * rOut };
 }
 
