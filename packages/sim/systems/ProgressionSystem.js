@@ -1,10 +1,9 @@
 import {
-  LEVELS, BOSS_INTERVAL, SKILL_PTS_PER_LEVEL,
-  GOLD_PER_SEC, GOLD_PER_LEVEL, XP_PER_SEC, WORLD_SIZE,
+  LEVELS, SKILL_PTS_PER_LEVEL,
+  GOLD_PER_SEC, GOLD_PER_LEVEL, XP_PER_SEC,
   MINE_UPGRADE_BASE_COST, MINE_UPGRADE_GROWTH, MINE_BONUS_STEP, MAX_MINE_LEVEL,
   BASE_HP_REGEN_DELAY, BASE_HP_REGEN_RATE,
 } from '../constants.js';
-import { Boss } from '../entities.js';
 import { randPick } from '../utils/helpers.js';
 
 /**
@@ -22,8 +21,9 @@ import { randPick } from '../utils/helpers.js';
 export function goldRate(base) {
   const level   = base.level ?? 1;
   const mining  = base.miningBonus ?? 0;
+  const bossOwn = base.bossBonus ?? 0;   // permanent, but bounded by BOSS_COUNT
   const mult    = base.goldMult ?? 1;
-  return (GOLD_PER_SEC + level * GOLD_PER_LEVEL + mining) * mult;
+  return (GOLD_PER_SEC + level * GOLD_PER_LEVEL + mining + bossOwn) * mult;
 }
 
 /** Gold cost of the next mining upgrade (null if maxed). */
@@ -58,7 +58,8 @@ export class ProgressionSystem {
     this._mineAndTrickle(state, dtMs);
     this._regenBases(state, dtMs);
     this._awardXP(state);
-    this._checkBoss(state, dtMs);
+    // Bosses are handled by BossSystem now. They no longer appear on a
+    // repeating timer and they are not creatures that wander — see that file.
   }
 
   // Mother base heals once it hasn't been hit for BASE_HP_REGEN_DELAY.
@@ -151,14 +152,4 @@ export class ProgressionSystem {
     state.notify(`✨ Specialization: ${spec.toUpperCase()}!`, 'success', player.id);
   }
 
-  // ── Boss ─────────────────────────────────────────────────────────────────
-  _checkBoss(state, dtMs) {
-    if (state.boss) return;
-    state.bossTimer -= dtMs;
-    if (state.bossTimer > 0) return;
-    state.bossTimer = BOSS_INTERVAL;
-    const c = WORLD_SIZE / 2;
-    state.boss = new Boss(state.newId(), c, c);
-    state.notify('☠️ BOSS spawned at map centre!', 'warning', 'all');
-  }
 }

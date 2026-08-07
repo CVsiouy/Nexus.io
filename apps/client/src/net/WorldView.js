@@ -56,7 +56,7 @@ export class WorldView {
     this.eatables = new Map();
     this.wildlings = new Map();
     this.mineNodes = new Map();
-    this.boss = null;
+    this.bosses = new Map();
 
     this.ready = false;
 
@@ -289,18 +289,25 @@ export class WorldView {
     });
   }
 
+  /** Bosses never move, so only their health and walls actually change. */
   _syncBoss(a, b, k) {
-    const n = b.snap.boss;
-    if (!n) { this.boss = null; return; }
-    const p = a.snap.boss && a.snap.boss.id === n.id ? a.snap.boss : null;
-    if (!this.boss) this.boss = { position: { x: n.x, y: n.y } };
-    const v = this.boss;
-    v.id = n.id;
-    v.maxHp = n.maxHp;
-    v.hp = p ? lerp(p.hp, n.hp, k) : n.hp;
-    v.rotation = p ? lerp(p.rotation, n.rotation, k) : n.rotation;
-    v.position.x = p ? lerp(p.x, n.x, k) : n.x;
-    v.position.y = p ? lerp(p.y, n.y, k) : n.y;
+    const prev = byId(a.snap.bosses ?? []);
+    const seen = new Set();
+
+    for (const n of b.snap.bosses ?? []) {
+      let v = this.bosses.get(n.id);
+      if (!v) { v = { position: { x: n.x, y: n.y } }; this.bosses.set(n.id, v); }
+      const p = prev.get(n.id);
+      v.id = n.id;
+      v.index = n.index;
+      v.maxHp = n.maxHp;
+      v.hp = p ? lerp(p.hp, n.hp, k) : n.hp;
+      v.walls = n.walls;
+      v.position.x = n.x;
+      v.position.y = n.y;
+      seen.add(n.id);
+    }
+    for (const id of this.bosses.keys()) if (!seen.has(id)) this.bosses.delete(id);
   }
 
   // ── Read API (mirrors the old GameState so renderers/input barely changed) ──
@@ -346,7 +353,7 @@ export class WorldView {
   resolve(id) {
     if (id == null) return null;
     return this.soldiers.get(id) ?? this.bases.get(id) ?? this.eatables.get(id)
-        ?? this.wildlings.get(id) ?? (this.boss?.id === id ? this.boss : null);
+        ?? this.wildlings.get(id) ?? this.bosses.get(id) ?? null;
   }
 }
 

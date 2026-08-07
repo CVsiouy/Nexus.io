@@ -1,6 +1,6 @@
 import {
   BASE_HP, SPAWN_PROTECT, SOLDIER_DEFS, TURRET_DEFS,
-  STARTING_GOLD, EATABLE_DEFS,
+  STARTING_GOLD, EATABLE_DEFS, BOSS_HP,
   WILDLING_HP, WILDLING_DAMAGE, WILDLING_SPEED,
 } from './constants.js';
 
@@ -25,6 +25,11 @@ export class Base {
     // it grants no ongoing benefit. (It replaced `conquestGoldBonus`, which
     // gave permanent stacking income and produced runaway leaders.)
     this.conquests         = 0;
+
+    // Permanent +gold/sec from bosses killed. This IS ongoing income, but
+    // unlike the old per-kill bonus it is hard-bounded: only BOSS_COUNT bosses
+    // ever exist, so the ceiling is fixed and known.
+    this.bossBonus         = 0;
     this.lastAttackerId  = null;          // owner id of the last soldier to damage this base (kill credit)
     this.xp              = 0;             // spendable XP (unused for now; kept for parity)
     this.xpEarned        = 0;             // lifetime XP earned (drives leveling)
@@ -78,6 +83,11 @@ export class Soldier {
     this.groupId    = null; // which Group this soldier belongs to
     this.slot       = 0;    // formation slot index within the group
     this.donateTo   = null; // (Team mode) teammate id this soldier is walking over to join
+
+    // Where this soldier was at the start of the tick. Wall collision compares
+    // the two to tell "walked through standing wall" from "already inside".
+    this.prevX      = x;
+    this.prevY      = y;
   }
 }
 
@@ -102,6 +112,9 @@ export class Group {
     this.attackToken = null;          // soldier id currently allowed to strike (one-at-a-time)
     this.attackCd    = 0;             // ms pacing between the squad's turn-taking strikes
     this.defendNodeId = null;         // if set, this squad orbits/defends a mining node instead of the base
+    // An explicit point to guard, used by squads with no mother base of their
+    // own — currently the boss's garrison.
+    this.guardPos     = null;
     this.formed      = false;         // true once it has reached a full 15 — then deployable even below 15
   }
 }
@@ -188,17 +201,28 @@ export class MineNode {
   }
 }
 
-// ─── Boss ──────────────────────────────────────────────────────────────────────
+// ─── Boss (a fortified neutral objective, not a roaming monster) ───────────────
+//
+// It never moves, never heals, and never rebuilds its wall. It grows a small
+// garrison on a slow timer and otherwise just sits there being worth taking.
 export class Boss {
-  constructor(id, x, y) {
+  constructor(id, x, y, index = 0) {
     this.id         = id;
+    this.ownerId    = 'boss';     // so areEnemies() treats it as hostile to all
+    this.index      = index;      // 0, 1 — which boss this is
     this.position   = { x, y };
-    this.hp         = 5000;
-    this.maxHp      = 5000;
-    this.speed      = 28;
+    this.hp         = BOSS_HP;
+    this.maxHp      = BOSS_HP;
     this.rotation   = 0;
     this.damage     = 18;
     this.atkCd      = 0;
-    this.contrib    = new Map(); // playerId → damage dealt (for XP split)
+
+    /** One ring, built once at spawn. Never repaired, never extended. */
+    this.walls      = [];
+
+    this.spawnTimer = 0;          // ms toward the next defensive squad
+    this.squadsMade = 0;
+    this.lastAttackedAt = -Infinity;
+    this.contrib    = new Map();  // playerId → damage dealt (for the XP split)
   }
 }

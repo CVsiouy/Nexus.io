@@ -130,10 +130,11 @@ for (let m = 0; m < MATCHES; m++) {
       if (hw > 60000) flag('entity ids approaching the 2-byte network limit', `highWater=${hw}`);
     }
 
-    if (sim.state.boss) rec.bossSpawned = true;
+    if (sim.state.bossesSpawned > 0) rec.bossSpawned = true;
 
     // Eliminations
     for (const ev of sim.drainEvents()) {
+      if (ev.type === 'bossKilled') rec.bossesKilled = (rec.bossesKilled ?? 0) + 1;
       if (ev.type === 'playerEliminated') {
         const atMs = sim.state.time;
         rec.eliminations.push({ id: ev.data.ownerId, by: ev.data.killerId, atMs });
@@ -216,7 +217,8 @@ console.log(`  peak army (best bot)           median ${median(matches.map(m => M
 console.log(`  population cap usage           mean ${(mean(matches.flatMap(m => m.popUse)) * 100).toFixed(0)}%`);
 console.log(`  wall cells built (best bot)    median ${median(matches.map(m => m.wallsBuilt))}`);
 console.log(`  highest level reached          median ${median(matches.map(m => m.maxLevel))}`);
-console.log(`  boss appeared                  ${matches.filter(m => m.bossSpawned).length}/${MATCHES} matches`);
+console.log(`  bosses appeared                ${matches.filter(m => m.bossSpawned).length}/${MATCHES} matches`);
+console.log(`  bosses killed per match        median ${median(matches.map(m => m.bossesKilled ?? 0))}`);
 
 console.log(`\n── Economy ──`);
 const unspent = matches.flatMap(m => m.unspentGold);

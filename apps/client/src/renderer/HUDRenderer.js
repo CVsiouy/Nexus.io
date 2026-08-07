@@ -338,10 +338,11 @@ export class HUDRenderer {
     }
 
     // Boss is announced to everyone.
-    if (state.boss) {
+    // Bosses are announced to everyone — they are the contested objective.
+    for (const [, boss] of state.bosses) {
       ctx.fillStyle = '#d4a017';
       ctx.beginPath();
-      ctx.arc(state.boss.position.x * scale, state.boss.position.y * scale, 3, 0, Math.PI * 2);
+      ctx.arc(boss.position.x * scale, boss.position.y * scale, 3.5, 0, Math.PI * 2);
       ctx.fill();
     }
 

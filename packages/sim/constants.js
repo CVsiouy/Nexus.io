@@ -25,7 +25,37 @@ export const LATE_JOIN_GOLD_MAX           = 600;
 
 // ─── HP ──────────────────────────────────────────────────────────────────────
 export const BASE_HP          = 10000; // mother base is a fortress (all modes)
-export const BOSS_HP          = 5000;
+// ─── Bosses ───────────────────────────────────────────────────────────────────
+//
+// A boss is a fortified neutral objective sitting in the middle of the map, not
+// a monster that wanders over and hits you. It:
+//   • never moves
+//   • starts with one ring of wall it can never repair or rebuild
+//   • grows a small defensive garrison on a slow timer, purely to defend itself
+//   • has no economy, no healing, and no wall repair
+//
+// Killing one is worth permanent income, which makes the centre of the map
+// worth fighting over — and worth fighting over EARLY, since whoever takes a
+// boss compounds that advantage for the rest of the match.
+export const BOSS_HP           = 5000;
+export const BOSS_COUNT        = 2;                 // start with two
+export const BOSS_FIRST_MS     = 3.5 * 60 * 1000;   // first appears at 3m30
+export const BOSS_STAGGER_MS   = 4 * 60 * 1000;     // the second, this much later
+export const BOSS_SPREAD       = 260;               // how far each sits from map centre
+
+/** Its wall: one ring, deliberately softer than a player's, never repaired. */
+export const BOSS_WALL_CELLS    = 12;
+export const BOSS_WALL_RADIUS   = 96;
+export const BOSS_WALL_CELL_HP  = 2500;
+
+/** Its garrison: small, slow, and purely defensive. */
+export const BOSS_SQUAD_SIZE     = 5;
+export const BOSS_SQUAD_INTERVAL_MS = 55000;
+export const BOSS_MAX_SQUADS     = 2;    // caps the total defence at 10 soldiers
+
+/** Permanent income granted to whoever lands the killing blow. */
+export const BOSS_GOLD_REWARD = 2;       // gold/sec, forever — bounded by BOSS_COUNT
+export const BOSS_XP_REWARD   = 400;
 // Mother base slowly heals if it hasn't been hit for a while.
 // NOTE: healing this fast means a battered base is back to full in about a
 // minute, so damage only counts if you finish the job in one push. That looked
@@ -318,6 +348,16 @@ export const BOT_RESTLESS_DECAY = 0.025;  // edge requirement lost per tick beyo
  * a real gamble, which is the correct behaviour when waiting is also losing.
  */
 export const BOT_RESTLESS_FLOOR = 0.55;
+
+/**
+ * How much more attractive a boss is than an equally-defended rival base.
+ *
+ * Above zero because a boss is worth permanent income and, unlike a player,
+ * never marches on your home while you are busy — so committing to one risks
+ * only the squads you send. Raise it and bots fight over the middle; lower it
+ * and they ignore the objective entirely.
+ */
+export const BOT_BOSS_APPEAL = 1.2;
 
 // ─── Seats ────────────────────────────────────────────────────────────────────
 // A match has exactly SEAT_COUNT mother bases. Every seat is identical: it

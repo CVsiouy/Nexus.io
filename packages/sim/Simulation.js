@@ -6,6 +6,7 @@ import { GroupSystem, releaseGarrison, moveGroup, attackWithGroup, setDefending,
 import { AISystem } from './systems/AISystem.js';
 import { CenterSystem } from './systems/CenterSystem.js';
 import { MiningSystem } from './systems/MiningSystem.js';
+import { BossSystem } from './systems/BossSystem.js';
 import { ProgressionSystem, buyMineUpgrade } from './systems/ProgressionSystem.js';
 import { canAddWall } from './walls.js';
 import { dist2 } from './utils/helpers.js';
@@ -58,6 +59,7 @@ export class Simulation {
       ai:     new AISystem(),
       center: new CenterSystem(),
       mining: new MiningSystem(),
+      boss:   new BossSystem(),
       group:  new GroupSystem(),
       combat: new CombatSystem(),
     };
@@ -202,6 +204,7 @@ export class Simulation {
       this._systems.ai.update(s, dtMs);
       this._systems.center.update(s, dt, dtMs);
       this._systems.mining.update(s, dt, dtMs);
+      this._systems.boss.update(s, dt, dtMs);
       this._systems.group.update(s, dt, dtMs);
 
       // Soldiers just moved, so the index is stale — rebuild before combat,
@@ -211,7 +214,6 @@ export class Simulation {
       this._systems.combat.update(s, dt, dtMs);
 
       this._spinBases(dt);
-      this._moveBoss(dt);
     } catch (err) {
       // The old code swallowed this silently so a single-player game could limp
       // on. On a server that's dangerous: a match could break in minute 2 and
@@ -233,30 +235,8 @@ export class Simulation {
     }
   }
 
-  /** The boss walks toward whichever mother base is nearest. */
-  _moveBoss(dt) {
-    const boss = this.state.boss;
-    if (!boss) return;
-    boss.rotation += 1.5 * dt;
-
-    let nearest = null, nearestD2 = Infinity;
-    for (const [, p] of this.state.players) {
-      if (!p.alive) continue;
-      const dx = p.base.position.x - boss.position.x;
-      const dy = p.base.position.y - boss.position.y;
-      const d2 = dx * dx + dy * dy;
-      if (d2 < nearestD2) { nearestD2 = d2; nearest = p.base; }
-    }
-    if (!nearest) return;
-
-    const dx = nearest.position.x - boss.position.x;
-    const dy = nearest.position.y - boss.position.y;
-    const len = Math.sqrt(dx * dx + dy * dy);
-    if (len > 60) {
-      boss.position.x += (dx / len) * boss.speed * dt;
-      boss.position.y += (dy / len) * boss.speed * dt;
-    }
-  }
+  // NOTE: the boss used to walk toward whichever base was nearest. It is now a
+  // fortified position that never moves — see systems/BossSystem.js.
 
   // ── Commands ───────────────────────────────────────────────────────────────
 
@@ -481,10 +461,15 @@ export class Simulation {
         capturingBy: n.capturingBy, captureProg: n.captureProg,
         goldRate: n.goldRate, rot: n.rot,
       })),
-      boss: s.boss ? {
-        id: s.boss.id, x: s.boss.position.x, y: s.boss.position.y,
-        hp: s.boss.hp, maxHp: s.boss.maxHp, rotation: s.boss.rotation,
-      } : null,
+      bosses: [...s.bosses.values()].map(b => ({
+        id: b.id, index: b.index,
+        x: b.position.x, y: b.position.y,
+        hp: b.hp, maxHp: b.maxHp, rotation: b.rotation,
+        walls: b.walls.map(l => ({
+          ring: l.ring, radius: l.radius, maxCells: l.maxCells,
+          cells: l.cells.map(c => ({ slot: c.slot, hp: c.hp, maxHp: c.maxHp })),
+        })),
+      })),
     };
   }
 
@@ -537,7 +522,7 @@ function snapshotPlayer(p) {
       hp: b.hp, maxHp: b.maxHp, level: b.level, gold: b.gold,
       xpEarned: b.xpEarned, rotation: b.rotation,
       mineLevel: b.mineLevel, miningBonus: b.miningBonus,
-      goldMult: b.goldMult,
+      bossBonus: b.bossBonus, goldMult: b.goldMult,
       garrison: b.garrison, skillPoints: b.skillPoints,
       specialization: b.specialization, spawnProtected: b.spawnProtected,
       lastAttackedAt: b.lastAttackedAt,

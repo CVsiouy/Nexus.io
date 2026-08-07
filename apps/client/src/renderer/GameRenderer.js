@@ -429,10 +429,44 @@ export class GameRenderer {
 
   // ── Boss ───────────────────────────────────────────────────────────────────
   _drawBoss(state, t) {
-    if (!state.boss) return;
+    for (const [, boss] of state.bosses) this._drawOneBoss(state, boss, t);
+  }
+
+  _drawOneBoss(state, b, t) {
     const g = this._boss;
-    const b = state.boss;
     const { x, y } = b.position;
+
+    // Its wall ring. Drawn in a neutral gold so it reads as "not anyone's",
+    // and cells that have been destroyed simply are not drawn — that gap is a
+    // real doorway, and it needs to be obvious where it is.
+    for (const layer of b.walls ?? []) {
+      const R = 11;
+      const bySlot = new Map();
+      for (const c of layer.cells) {
+        const a = (c.slot / layer.maxCells) * Math.PI * 2 - Math.PI / 2;
+        bySlot.set(c.slot, {
+          x: x + Math.cos(a) * layer.radius,
+          y: y + Math.sin(a) * layer.radius,
+          angle: a, cell: c,
+        });
+      }
+      // Connect neighbours that are both still standing.
+      g.lineStyle(R * 0.8, 0x8a6d1f, 1);
+      for (const [slot, cp] of bySlot) {
+        const nb = bySlot.get((slot + 1) % layer.maxCells);
+        if (!nb) continue;
+        g.moveTo(cp.x, cp.y); g.lineTo(nb.x, nb.y);
+      }
+      g.lineStyle(0);
+      for (const [, cp] of bySlot) {
+        const hpR = cp.cell.maxHp ? cp.cell.hp / cp.cell.maxHp : 1;
+        g.lineStyle(2.5, 0x6b530f, 1);
+        g.beginFill(0xd4a017, 0.45 + 0.55 * hpR);
+        this._poly(g, cp.x, cp.y, 6, R, cp.angle);
+        g.endFill();
+        g.lineStyle(0);
+      }
+    }
     const sz = 30;
     const hpR = b.hp / b.maxHp;
     const pulse = Math.sin(t * 3.5) * 0.15 + 1;

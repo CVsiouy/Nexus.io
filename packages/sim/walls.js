@@ -1,5 +1,5 @@
 import {
-  BASE_RADIUS, WALL_GAP, WALL_LAYER_GAP,
+  BASE_RADIUS, WALL_GAP, WALL_LAYER_GAP, WALL_CELL_SIZE,
   WALL_CELLS_BASE, WALL_CELLS_PER_LAYER, DEFENDER_HP,
   WALL_REPAIR_DELAY, WALL_REPAIR_RATE, MAX_WALL_LAYERS,
 } from './constants.js';
@@ -54,6 +54,73 @@ export function outerBlockingLayer(base) {
     if (!best || l.radius > best.radius) best = l;
   }
   return best;
+}
+
+/** Outermost ring that still has ANY cells standing, complete or not. */
+export function outermostLayer(base) {
+  let best = null;
+  for (const l of base.walls) {
+    if (!l.cells.length) continue;
+    if (!best || l.radius > best.radius) best = l;
+  }
+  return best;
+}
+
+// ─── Where a wall is solid, and where it has a hole ──────────────────────────
+//
+// A ring is divided into `maxCells` equal sectors, one per slot. A sector is
+// solid if its cell is still standing, and open if that cell has been
+// destroyed. That is what makes a breach mean something: knock out ONE cell and
+// you have opened a doorway, and attackers have to funnel through that doorway
+// rather than strolling across the ring wherever they like.
+//
+// (Previously an incomplete ring simply stopped blocking anywhere at all, so
+// destroying a single cell made the entire wall meaningless.)
+
+/** The slot whose sector contains `angle` (radians, same frame as cellPos). */
+export function slotAtAngle(layer, angle) {
+  const TAU = Math.PI * 2;
+  // cellPos puts slot s at (s / maxCells) * TAU - PI/2, so undo that offset.
+  let t = (angle + Math.PI / 2) / TAU;
+  t -= Math.floor(t);                       // wrap into 0..1
+  return Math.round(t * layer.maxCells) % layer.maxCells;
+}
+
+/** Is this ring solid at `angle`, i.e. is the cell covering that sector alive? */
+export function solidAtAngle(layer, angle) {
+  const slot = slotAtAngle(layer, angle);
+  for (const c of layer.cells) if (c.slot === slot) return true;
+  return false;
+}
+
+/**
+ * Would moving from `from` to `to` cross this ring through solid wall?
+ *
+ * Crossing is what we block, NOT simply being inside. A soldier that came in
+ * legitimately through a breach must be free to move around inside; only the
+ * act of passing through a standing section is forbidden.
+ */
+export function crossesWall(base, layer, from, to) {
+  const cx = base.position.x, cy = base.position.y;
+  const rOut = layer.radius + WALL_CELL_SIZE * 0.6;
+
+  const dFrom = Math.hypot(from.x - cx, from.y - cy);
+  const dTo = Math.hypot(to.x - cx, to.y - cy);
+
+  // Only an inward crossing of the ring boundary counts.
+  if (!(dFrom >= rOut && dTo < rOut)) return false;
+
+  // Check the wall at the angle where the crossing happens.
+  return solidAtAngle(layer, Math.atan2(to.y - cy, to.x - cx));
+}
+
+/** Push a point back to just outside `layer`, keeping its bearing from the base. */
+export function pushOutside(base, layer, pos) {
+  const cx = base.position.x, cy = base.position.y;
+  const dx = pos.x - cx, dy = pos.y - cy;
+  const d = Math.hypot(dx, dy) || 1;
+  const rOut = layer.radius + WALL_CELL_SIZE * 0.6;
+  return { x: cx + (dx / d) * rOut, y: cy + (dy / d) * rOut };
 }
 
 export function hasBlockingWall(base) {

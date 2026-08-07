@@ -345,7 +345,9 @@ export class InputSystem {
       if (s.hp <= 0 || !w.areEnemies(me, s.ownerId)) continue;
       if (dist2(s.position, wp) < 16 * 16) return s;
     }
-    if (w.boss && dist2(w.boss.position, wp) < 45 * 45) return w.boss;
+    for (const [, boss] of w.bosses) {
+      if (dist2(boss.position, wp) < 55 * 55) return boss;
+    }
     return null;
   }
 

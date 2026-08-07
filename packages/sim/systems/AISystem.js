@@ -4,7 +4,7 @@ import {
   DEFENDER_EDGE, BOT_THREAT_RADIUS, BOT_THREAT_FLOOR, BOT_THREAT_FRACTION,
   BOT_DEFENCE_SAFETY, BOT_CAUTION,
   BOT_MIN_HOME, BOT_ATTACK_EDGE, BOT_PATIENCE,
-  BOT_RESTLESS_AFTER, BOT_RESTLESS_DECAY, BOT_RESTLESS_FLOOR,
+  BOT_RESTLESS_AFTER, BOT_RESTLESS_DECAY, BOT_RESTLESS_FLOOR, BOT_BOSS_APPEAL,
   BASE_DEFENSE_RADIUS, MAX_WALL_LAYERS,
 } from '../constants.js';
 import { attackWithGroup, setDefending, moveGroup, releaseGarrison } from './GroupSystem.js';
@@ -336,6 +336,29 @@ export class AISystem {
 
     let best = null, bestScore = -Infinity;
 
+    // ── Bosses ────────────────────────────────────────────────────────────
+    // A boss is a fortified neutral objective, and killing one grants
+    // permanent income. That makes it worth real force EARLY, because the
+    // reward compounds for the rest of the match — which is exactly the sort
+    // of judgement the force budget exists to make.
+    //
+    // It is also, importantly, a target that cannot retaliate: a boss never
+    // marches on your base, so committing to one risks only the squads sent.
+    for (const [, boss] of state.bosses) {
+      const defenders = this._visibleDefendersAt(state, boss.position, 'boss');
+      const walls = boss.walls?.some(l => l.cells.length) ? 1.35 : 1;
+      const required = Math.max(1, defenders * DEFENDER_EDGE * walls * edge);
+      if (force < required) continue;
+
+      const d = Math.sqrt(dist2(base.position, boss.position)) || 1;
+      const hpFrac = boss.hp / boss.maxHp;
+      // Weighted above an equivalent player base: permanent income is worth
+      // more than one rival's death, and nothing shoots back at your home.
+      const score = (force / required) * 2 - hpFrac - (d / 2000) + BOT_BOSS_APPEAL;
+
+      if (score > bestScore) { bestScore = score; best = { base: boss, isBoss: true }; }
+    }
+
     for (const [, other] of state.players) {
       if (!other.alive || !state.areEnemies(player.id, other.id)) continue;
 
@@ -362,12 +385,16 @@ export class AISystem {
 
   /** Enemy soldiers visibly stationed around a base. Excludes hidden garrisons. */
   _visibleDefenders(state, other) {
+    return this._visibleDefendersAt(state, other.base.position, other.id);
+  }
+
+  /** Soldiers of `ownerId` visibly stationed around a point. */
+  _visibleDefendersAt(state, pos, ownerId) {
     let n = 0;
-    const px = other.base.position.x, py = other.base.position.y;
     const r2 = BASE_DEFENSE_RADIUS * BASE_DEFENSE_RADIUS;
-    state.grid.forEachNear(px, py, BASE_DEFENSE_RADIUS, (s) => {
-      if (s.hp <= 0 || s.ownerId !== other.id) return;
-      const dx = s.position.x - px, dy = s.position.y - py;
+    state.grid.forEachNear(pos.x, pos.y, BASE_DEFENSE_RADIUS, (s) => {
+      if (s.hp <= 0 || s.ownerId !== ownerId) return;
+      const dx = s.position.x - pos.x, dy = s.position.y - pos.y;
       if (dx * dx + dy * dy <= r2) n++;
     });
     return n;

@@ -5,19 +5,19 @@ import {
   BASE_RADIUS, BOSS_RADIUS, SOLDIER_RADIUS, WORLD_SIZE,
   ATTACK_RANGE, WALL_CELL_SIZE, BASE_DEFENSE_RADIUS,
 } from '../constants.js';
-import { outerBlockingLayer, nearestCell } from '../walls.js';
+import { outerBlockingLayer, outermostLayer, nearestCell, crossesWall, pushOutside } from '../walls.js';
 
 /** True if the target is a "structure" (a base or the boss) that gets surrounded. */
 export function isStructureTarget(state, target) {
   if (!target) return false;
-  return state.bases.has(target.id) || (state.boss && state.boss.id === target.id);
+  return state.bases.has(target.id) || state.bosses.has(target.id);
 }
 
 /** Physical radius of a target, for range checks & the surround ring. */
 export function targetRadius(state, target) {
   if (!target) return SOLDIER_RADIUS;
   if (state.bases.has(target.id)) return BASE_RADIUS;
-  if (state.boss && state.boss.id === target.id) return BOSS_RADIUS;
+  if (state.bosses.has(target.id)) return BOSS_RADIUS;
   return SOLDIER_RADIUS;
 }
 
@@ -38,6 +38,14 @@ function spdMult(player) { return 1 + (player?.buffs?.spd ?? 0) * 0.10; }
  */
 export class GroupSystem {
   update(state, dt, dtMs) {
+    // Remember where everyone started this tick. Wall collision needs the
+    // before-and-after pair to tell "walked through a standing wall" apart from
+    // "already inside, having come in through a breach".
+    for (const [, s] of state.soldiers) {
+      s.prevX = s.position.x;
+      s.prevY = s.position.y;
+    }
+
     this._updateGroups(state, dt);
     this._updateDonations(state, dt);
     this._enforceWalls(state);
@@ -106,11 +114,13 @@ export class GroupSystem {
           g.anchor = { x: ax, y: ay };
         }
       } else if (g.status === 'defending') {
-        // Guard point: a mining node, else the mother base.
-        let cpos = player?.base?.position;
+        // Guard point: an explicit one (boss squads), a mining node, else the
+        // mother base.
+        let cpos = g.guardPos ?? player?.base?.position;
+        let guarded = g.guardPos ? null : player?.base;
         if (g.defendNodeId) {
           const node = state.mineNodes.get(g.defendNodeId);
-          if (node) cpos = node.position; else g.defendNodeId = null;
+          if (node) { cpos = node.position; guarded = null; } else g.defendNodeId = null;
         }
         // If an enemy has entered the guarded ring, the WHOLE FORMATION shifts
         // toward the nearest one (staying concentrated — no scattering), but is
@@ -126,7 +136,25 @@ export class GroupSystem {
           if (best) {
             const dx = best.position.x - cpos.x, dy = best.position.y - cpos.y;
             const d = Math.sqrt(bd) || 1;
-            const reach = Math.min(d, 0.55 * BASE_DEFENSE_RADIUS);
+            let reach = Math.min(d, 0.55 * BASE_DEFENSE_RADIUS);
+
+            // ── Hold the line behind your own wall ──────────────────────────
+            //
+            // If this base has a wall standing, the squad stops INSIDE it
+            // instead of marching out to meet the attackers. Everything then
+            // falls out of the existing combat rules: the soldiers whose range
+            // reaches past the wall shoot, the rest simply hold, and the wall —
+            // not the defenders — soaks the incoming damage.
+            //
+            // That is the trade a wall is supposed to buy. Walking out in front
+            // of it threw that away, which is why a big defending squad used to
+            // fare WORSE than two or three soldiers who happened to stay put.
+            const wall = guarded ? outermostLayer(guarded) : null;
+            if (wall) {
+              const inside = Math.max(0, wall.radius - WALL_CELL_SIZE - FORMATION_SPACING);
+              reach = Math.min(reach, inside);
+            }
+
             anchor = { x: cpos.x + (dx / d) * reach, y: cpos.y + (dy / d) * reach };
           }
           g.anchor = anchor;
@@ -190,25 +218,39 @@ export class GroupSystem {
    * wall ring — it's pushed back to just outside until that ring is breached.
    * (Own soldiers pass freely.)
    */
+  /**
+   * Stop enemies walking through standing wall.
+   *
+   * The rule is about CROSSING, not about being inside. A ring is solid at the
+   * bearings where its cells still stand and open where one has been destroyed,
+   * so knocking out a single cell opens a doorway that attackers must funnel
+   * through — and anyone who came in that way is then free to move about
+   * inside rather than being shoved back out.
+   *
+   * Previously an incomplete ring stopped blocking entirely, so one broken cell
+   * made the whole wall irrelevant and soldiers crossed it anywhere.
+   */
   _enforceWalls(state) {
-    for (const [, b] of state.bases) {
-      const layer = outerBlockingLayer(b);
-      if (!layer) continue;
-      const R = layer.radius + WALL_CELL_SIZE * 0.6;
-      const R2 = R * R;
-      // Only soldiers already inside the ring can be pushed out, so ask the
-      // grid for those rather than testing everyone on the map against
-      // every walled base.
-      state.grid.forEachNear(b.position.x, b.position.y, R, (s) => {
-        if (s.hp <= 0 || !state.areEnemies(s.ownerId, b.ownerId)) return;
-        const dx = s.position.x - b.position.x, dy = s.position.y - b.position.y;
-        const d2 = dx * dx + dy * dy;
-        if (d2 < R2 && d2 > 1) {
-          const d = Math.sqrt(d2);
-          s.position.x = b.position.x + (dx / d) * R;
-          s.position.y = b.position.y + (dy / d) * R;
-        }
-      });
+    const structures = [];
+    for (const [, b] of state.bases) structures.push(b);
+    for (const [, boss] of state.bosses) structures.push(boss);
+
+    for (const b of structures) {
+      if (!b.walls?.length) continue;
+
+      for (const layer of b.walls) {
+        if (!layer.cells.length) continue;
+        const R = layer.radius + WALL_CELL_SIZE * 0.6;
+
+        state.grid.forEachNear(b.position.x, b.position.y, R + 40, (s) => {
+          if (s.hp <= 0 || !state.areEnemies(s.ownerId, b.ownerId)) return;
+          const from = { x: s.prevX ?? s.position.x, y: s.prevY ?? s.position.y };
+          if (!crossesWall(b, layer, from, s.position)) return;
+          const p = pushOutside(b, layer, s.position);
+          s.position.x = p.x;
+          s.position.y = p.y;
+        });
+      }
     }
   }
 

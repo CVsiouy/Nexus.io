@@ -2,7 +2,7 @@ import { dist2 } from '../utils/helpers.js';
 import { Projectile } from '../entities.js';
 import {
   ATTACK_RANGE, TURRET_DEFS, STRUCTURE_DMG_MULT, WALL_DMG_MULT, SOLDIER_RADIUS, WALL_CELL_SIZE,
-  CONQUEST_GOLD_LUMP, CONQUEST_XP, KILL_XP,
+  CONQUEST_GOLD_LUMP, CONQUEST_XP, KILL_XP, BOSS_GOLD_REWARD, BOSS_XP_REWARD,
   EATABLE_DEFS, WILDLING_XP_BOUNTY, BASE_DEFENSE_RADIUS, DEFENDER_ATK_MULT, DEFENDER_DMG_TAKEN,
 } from '../constants.js';
 import { isStructureTarget, targetRadius } from './GroupSystem.js';
@@ -293,9 +293,11 @@ export class CombatSystem {
       if (ap) ap.pendingXP += KILL_XP;
     }
 
-    if (state.boss && target.id === state.boss.id) {
-      const prev = state.boss.contrib.get(attacker.ownerId) || 0;
-      state.boss.contrib.set(attacker.ownerId, prev + dmg);
+    const bossTarget = state.bosses.get(target.id);
+    if (bossTarget) {
+      bossTarget.contrib.set(attacker.ownerId, (bossTarget.contrib.get(attacker.ownerId) || 0) + dmg);
+      bossTarget.lastAttackerId = attacker.ownerId;   // who gets the kill credit
+      bossTarget.lastAttackedAt = now;
     }
   }
 
@@ -356,15 +358,18 @@ export class CombatSystem {
 
   // ── Boss ─────────────────────────────────────────────────────────────────────
   _bossSwipe(state, dtMs) {
-    if (!state.boss) return;
-    if (state.boss.atkCd > 0) { state.boss.atkCd -= dtMs; return; }
-    for (const [, sol] of state.soldiers) {
-      if (sol.hp <= 0) continue;
-      if (dist2(sol.position, state.boss.position) < 55 * 55) {
-        sol.hp = Math.max(0, sol.hp - state.boss.damage);
-        state.boss.atkCd = 800;
-        break;
-      }
+    // A boss lashes out at anything that gets right up against it. It never
+    // chases — this only reaches attackers who have already committed to
+    // standing on top of it.
+    for (const [, boss] of state.bosses) {
+      if (boss.atkCd > 0) continue;
+      const hit = state.grid.nearest(
+        boss.position.x, boss.position.y, 55,
+        (s) => s.hp > 0 && s.ownerId !== 'boss',
+      );
+      if (!hit) continue;
+      hit.hp = Math.max(0, hit.hp - boss.damage);
+      boss.atkCd = 800;
     }
   }
 
@@ -405,20 +410,50 @@ export class CombatSystem {
       }
     }
 
-    if (state.boss && state.boss.hp <= 0) {
-      const contributions = [...state.boss.contrib.entries()].sort((a, b) => b[1] - a[1]);
-      contributions.forEach(([pid], rank) => {
+    for (const [bid, boss] of state.bosses) {
+      if (boss.hp > 0) continue;
+
+      // Permanent income to whoever landed the killing blow.
+      //
+      // This is the one place ongoing income is still granted, and unlike the
+      // old per-kill conquest bonus it CANNOT run away: there are only ever
+      // BOSS_COUNT bosses, so the most anyone can hold is a fixed, known
+      // amount. That bound is what makes it safe.
+      const killer = state.players.get(boss.lastAttackerId);
+      if (killer?.alive) {
+        killer.base.bossBonus = (killer.base.bossBonus ?? 0) + BOSS_GOLD_REWARD;
+        killer.pendingXP += BOSS_XP_REWARD;
+        state.notify(`🏆 Boss slain! +${BOSS_GOLD_REWARD} gold/sec for the rest of the match`, 'success', killer.id);
+      }
+
+      // Everyone who helped gets XP — bosses are meant to draw a crowd.
+      for (const [pid, dealt] of boss.contrib) {
         const p = state.players.get(pid);
-        if (p) {
-          const bonus = rank === 0 ? 500 : 200;
-          p.pendingXP += bonus;
-          p.base.gold += bonus;
-          state.notify(`🏆 Boss slain! +${bonus} gold & XP!`, 'success', pid);
+        if (p?.alive && pid !== boss.lastAttackerId) {
+          p.pendingXP += Math.round(BOSS_XP_REWARD * 0.35);
         }
-      });
-      state.freeId(state.boss.id);
-      state.boss = null;
-      state.event('bossKilled', {});
+      }
+
+      // Its garrison dies with it. Nothing inherits a leaderless boss squad.
+      for (const [sid, sol] of state.soldiers) {
+        if (sol.ownerId !== 'boss') continue;
+        const g = state.groups.get(sol.groupId);
+        if (g && g.guardPos &&
+            Math.hypot(g.guardPos.x - boss.position.x, g.guardPos.y - boss.position.y) < 5) {
+          state.soldiers.delete(sid);
+          state.freeId(sid);
+        }
+      }
+      for (const [gid, g] of state.groups) {
+        if (g.ownerId === 'boss' && g.memberIds.every(id => !state.soldiers.has(id))) {
+          state.groups.delete(gid);
+          state.freeId(gid);
+        }
+      }
+
+      state.bosses.delete(bid);
+      state.freeId(bid);
+      state.event('bossKilled', { id: bid, killerId: killer?.id ?? null, x: boss.position.x, y: boss.position.y });
     }
   }
 

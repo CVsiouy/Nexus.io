@@ -46,8 +46,10 @@
  *
  * v2: removed the per-base conquestGoldBonus (permanent stacking income was
  *     replaced by a one-time flat bounty).
+ * v3: the single roaming boss became a list of fortified bosses, each with its
+ *     own wall ring; bases gained bossBonus (permanent income from boss kills).
  */
-export const SNAPSHOT_VERSION = 2;
+export const SNAPSHOT_VERSION = 3;
 
 /** Map size. Must match WORLD_SIZE in packages/sim/constants.js. */
 const WORLD = 2800;
@@ -192,6 +194,7 @@ export function encodeSnapshot(snap: any, keyframe = false): ArrayBuffer {
       for (const u of b.unlocked) unlocked |= 1 << idx(UNIT_TYPES, u as any);
       w.u8(unlocked);
       w.u16(Math.round((b.miningBonus ?? 0) * 100));
+      w.u16(Math.round((b.bossBonus ?? 0) * 100));
       w.u16(Math.round((b.goldMult ?? 1) * 100));
     }
   }
@@ -250,13 +253,27 @@ export function encodeSnapshot(snap: any, keyframe = false): ArrayBuffer {
     w.u8(Math.min(255, Math.round((n.goldRate ?? 0) * 10)));
   }
 
-  // ── Boss ──────────────────────────────────────────────────────────────────
-  w.u8(snap.boss ? 1 : 0);
-  if (snap.boss) {
-    w.u16(snap.boss.id);
-    w.xy(snap.boss.x, snap.boss.y);
-    w.u16(Math.round(snap.boss.hp));
-    w.u16(Math.round(snap.boss.maxHp));
+  // ── Bosses ────────────────────────────────────────────────────────────────
+  // Fortified positions in the middle of the map. They never move, so their
+  // coordinates could in principle be keyframe-only — but there are at most a
+  // couple of them and the whole block is tiny, so it stays simple.
+  w.u8(Math.min(255, snap.bosses.length));
+  for (const b of snap.bosses.slice(0, 255)) {
+    w.u16(b.id);
+    w.u8(b.index);
+    w.xy(b.x, b.y);
+    w.u16(Math.round(b.hp));
+    w.u16(Math.round(b.maxHp));
+    w.u8(b.walls.length);
+    for (const layer of b.walls) {
+      w.u8(layer.maxCells);
+      w.u8(layer.cells.length);
+      w.u16(Math.round(layer.radius));
+      for (const c of layer.cells) {
+        w.u8(c.slot);
+        w.u8(Math.max(0, Math.min(255, Math.round((c.hp / c.maxHp) * 255))));
+      }
+    }
   }
 
   return w.done();
@@ -337,7 +354,7 @@ export function decodeSnapshot(buffer: ArrayBuffer | Uint8Array, prev?: any): an
     }
 
     let name: string, color: number, maxHp: number, unlockedMask: number;
-    let miningBonus: number, goldMult: number;
+    let miningBonus: number, bossBonus: number, goldMult: number;
     let baseId: number, baseX: number, baseY: number;
     if (keyframe) {
       baseId = r.u16();
@@ -348,6 +365,7 @@ export function decodeSnapshot(buffer: ArrayBuffer | Uint8Array, prev?: any): an
       maxHp = r.u32();
       unlockedMask = r.u8();
       miningBonus = r.u16() / 100;
+      bossBonus = r.u16() / 100;
       goldMult = r.u16() / 100;
     } else {
       // Carried over from the last keyframe — these change rarely, so sending
@@ -360,6 +378,7 @@ export function decodeSnapshot(buffer: ArrayBuffer | Uint8Array, prev?: any): an
       maxHp = old?.base?.maxHp ?? 10000;
       unlockedMask = old?.__unlockedMask ?? 0b11;
       miningBonus = old?.base?.miningBonus ?? 0;
+      bossBonus = old?.base?.bossBonus ?? 0;
       goldMult = old?.base?.goldMult ?? 1;
     }
 
@@ -380,7 +399,7 @@ export function decodeSnapshot(buffer: ArrayBuffer | Uint8Array, prev?: any): an
         id: baseId, x: baseX, y: baseY,
         hp, maxHp, level, gold, xpEarned,
         rotation: 0,          // cosmetic; the client animates this itself
-        mineLevel, miningBonus, goldMult,
+        mineLevel, miningBonus, bossBonus, goldMult,
         garrison, skillPoints,
         specialization: SPECS[(flags >> 3) & 3] ?? null,
         spawnProtected: !!(flags & 4),
@@ -481,16 +500,34 @@ export function decodeSnapshot(buffer: ArrayBuffer | Uint8Array, prev?: any): an
     });
   }
 
-  let boss = null;
-  if (r.u8() === 1) {
+  const bosses: any[] = [];
+  const bossCount = r.u8();
+  for (let i = 0; i < bossCount; i++) {
     const bid = r.u16();
+    const index = r.u8();
     const { x, y } = r.xy();
-    boss = { id: bid, x, y, hp: r.u16(), maxHp: r.u16(), rotation: 0 };
+    const hp = r.u16();
+    const maxHp = r.u16();
+    const walls: any[] = [];
+    const layerCount = r.u8();
+    for (let l = 0; l < layerCount; l++) {
+      const maxCells = r.u8();
+      const cellCount = r.u8();
+      const radius = r.u16();
+      const cells: any[] = [];
+      for (let c = 0; c < cellCount; c++) {
+        const slot = r.u8();
+        const hpPct = r.u8() / 255;
+        cells.push({ slot, hp: hpPct, maxHp: 1 });
+      }
+      walls.push({ ring: l, radius, maxCells, cells });
+    }
+    bosses.push({ id: bid, index, x, y, hp, maxHp, rotation: 0, walls });
   }
 
   return {
     tick, time, mode, keyframe,
-    players, groups, soldiers, mineNodes, boss, turrets, projectiles,
+    players, groups, soldiers, mineNodes, bosses, turrets, projectiles,
     eatables: [], wildlings: [],   // disabled in every mode; see CenterSystem
   };
 }

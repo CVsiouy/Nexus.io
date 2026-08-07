@@ -50,10 +50,14 @@ export class GameState {
     /** @type {Map<string, import('./entities').MineNode>} */
     this.mineNodes  = new Map();
 
-    /** @type {import('./entities').Boss|null} */
-    this.boss       = null;
+    /**
+     * Fortified neutral objectives in the middle of the map.
+     * @type {Map<number, import('./entities').Boss>}
+     */
+    this.bosses     = new Map();
 
-    this.bossTimer  = 15 * 60 * 1000;
+    /** How many have appeared so far — they spawn on a fixed schedule. */
+    this.bossesSpawned = 0;
     this.eatTimer   = 0;
     this.wildTimer  = 0;
 
@@ -92,9 +96,9 @@ export class GameState {
     if (id == null) return null;
     if (this.soldiers.has(id))  return this.soldiers.get(id);
     if (this.bases.has(id))     return this.bases.get(id);
+    if (this.bosses.has(id))    return this.bosses.get(id);
     if (this.eatables.has(id))  return this.eatables.get(id);
     if (this.wildlings.has(id)) return this.wildlings.get(id);
-    if (this.boss && this.boss.id === id) return this.boss;
     return null;
   }
 
