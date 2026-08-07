@@ -60,6 +60,9 @@ export class WorldView {
 
     this.ready = false;
 
+    /** Names that arrived before the player they belong to existed here. */
+    this._pendingNames = new Map();
+
     /** @type {{t:number, snap:object, idx:object}[]} */
     this._buffer = [];
   }
@@ -68,6 +71,22 @@ export class WorldView {
 
   /** Told once, on joining: which of the eight bases is mine. */
   setLocalId(ownerId) { this.playerId = ownerId; }
+
+  /**
+   * Apply a roster update ({ [ownerId]: name }).
+   *
+   * Names otherwise only travel on keyframes, so somebody joining mid-match
+   * would show as their seat id for up to two seconds. The server sends a
+   * roster the moment anyone joins or leaves, which closes that gap.
+   */
+  setNames(names) {
+    if (!names) return;
+    for (const [id, name] of Object.entries(names)) {
+      const p = this.players.get(id);
+      if (p && name) p.name = name;
+      else if (name) this._pendingNames.set(id, name);
+    }
+  }
 
   /** Take a snapshot from the connection. `sentAt` is on our own clock. */
   ingest(snapshot, sentAt) {
@@ -143,6 +162,13 @@ export class WorldView {
 
       view.id = p.id;
       view.seat = p.seat;
+      // The display name. Without this the HUD and the labels above each base
+      // fall back to the raw seat id and every human shows up as "p3".
+      // Names only travel on keyframes, so keep the last one we saw rather
+      // than blanking it between them.
+      if (p.name) view.name = p.name;
+      const pending = this._pendingNames.get(p.id);
+      if (pending) { view.name = pending; this._pendingNames.delete(p.id); }
       view.isBot = p.isBot;
       view.team = p.team;
       view.color = p.color;

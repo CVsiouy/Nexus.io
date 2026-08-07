@@ -2,6 +2,7 @@ import * as PIXI from 'pixi.js';
 
 import { WORLD_SIZE } from '@nexus/sim';
 import { WorkerConnection, WebSocketConnection } from './net/Connection.js';
+import { isTypingInto } from './dom.js';
 
 /**
  * Where the backend lives. Set by docker-compose in development; in production
@@ -54,6 +55,9 @@ export class Game {
     this._online = false;
     this._spectating = false;
     this._name = 'Player';
+    /** True while a demo match is playing behind the menu. */
+    this._attract = false;
+    this._tickerAdded = false;
     /** Live map pings, drawn for ~2s then dropped. */
     this._pings = [];
   }
@@ -95,7 +99,8 @@ export class Game {
       this._app.renderer.resize(window.innerWidth, window.innerHeight);
       this._camera.width = window.innerWidth;
       this._camera.height = window.innerHeight;
-      this._camera.zoom = (this._camera.width / WORLD_SIZE) * 0.98;
+      // The menu demo is deliberately zoomed in; in play the whole map fits.
+      this._camera.zoom = (this._camera.width / WORLD_SIZE) * (this._attract ? 1.7 : 0.98);
     });
   }
 
@@ -124,6 +129,10 @@ export class Game {
       this._matchId = msg.matchId ?? null;
       console.info(`[nexus] you are ${msg.youAre} (seat ${msg.seat + 1}) in a ${msg.mode} match`);
     });
+
+    // Sent whenever anyone joins or leaves, so a new player's name appears at
+    // once rather than at the next keyframe up to two seconds later.
+    conn.onRoster((roster) => this._world.setNames(roster?.names));
 
     conn.onSnapshot((snap, sentAt) => this._world.ingest(snap, sentAt));
     conn.onEvents((events) => this._handleEvents(events));
@@ -193,6 +202,7 @@ export class Game {
     document.getElementById('restart-btn').addEventListener('click', () => this._requeue());
 
     window.addEventListener('keydown', e => {
+      if (isTypingInto(e)) return;   // R must not release the garrison mid-name
       if (!this._running || this._gameOver) return;
       if (e.code === 'Escape') {
         const specOpen = document.getElementById('spec-modal').classList.contains('vis');
@@ -207,6 +217,119 @@ export class Game {
     if (el) el.addEventListener('click', fn);
   }
 
+  // ── Attract mode ───────────────────────────────────────────────────────────
+
+  /**
+   * Run a real match behind the menu.
+   *
+   * Not a video and not a mock-up — it is the actual simulation, in the same
+   * Web Worker practice mode uses, with eight bots playing properly. It costs
+   * nothing (it never touches the server) and it shows a new player what the
+   * game is in about three seconds, which no amount of menu copy can.
+   *
+   * The camera drifts between whatever is currently interesting rather than
+   * sitting still, so there is always something moving on screen.
+   */
+  async startAttract() {
+    this._attract = true;
+    this._conn = new WorkerConnection();
+    this._bindConnection();
+    await this._conn.start('ffa');
+
+    const cam = this._camera;
+    cam.focusType = 'free';
+    cam.focusId = null;
+    cam.x = WORLD_SIZE / 2;
+    cam.y = WORLD_SIZE / 2;
+    // Closer than the in-game view: the point is to see soldiers moving and
+    // fighting, not to read the whole map at once.
+    cam.zoom = (cam.width / WORLD_SIZE) * 1.7;
+
+    this._attractTarget = { x: cam.x, y: cam.y };
+    this._attractUntil = 0;
+
+    this._input.setEnabled(false);
+    this._startTicker();
+  }
+
+  /** Add the render loop exactly once, however many matches get played. */
+  _startTicker() {
+    if (this._tickerAdded) return;
+    this._tickerAdded = true;
+    this._running = true;
+    this._app.ticker.add(() => this._frame());
+  }
+
+  /**
+   * Drift the camera between points of interest.
+   *
+   * Prefers a base that is currently being fought over, then the largest squad
+   * on the move, and falls back to the middle of the map. Re-picks every few
+   * seconds so the shot keeps changing.
+   */
+  _updateAttractCamera(dt) {
+    const cam = this._camera;
+    const world = this._world;
+    const now = performance.now();
+
+    if (now > this._attractUntil) {
+      this._attractUntil = now + 6500 + Math.random() * 2500;
+      this._attractTarget = this._findAction(world) ?? { x: WORLD_SIZE / 2, y: WORLD_SIZE / 2 };
+    }
+
+    // Slow ease so it feels like a drifting camera, not a cut.
+    const k = Math.min(1, dt * 0.6);
+    cam.x += (this._attractTarget.x - cam.x) * k;
+    cam.y += (this._attractTarget.y - cam.y) * k;
+  }
+
+  /** Somewhere worth pointing a camera: a contested base, else a big squad. */
+  _findAction(world) {
+    let bestBase = null, bestPressure = 0;
+    for (const [, p] of world.players) {
+      if (!p.alive) continue;
+      let pressure = 0;
+      for (const [, s] of world.soldiers) {
+        if (s.ownerId === p.id) continue;
+        const dx = s.position.x - p.base.position.x;
+        const dy = s.position.y - p.base.position.y;
+        if (dx * dx + dy * dy < 320 * 320) pressure++;
+      }
+      if (pressure > bestPressure) { bestPressure = pressure; bestBase = p.base; }
+    }
+    if (bestBase && bestPressure >= 3) {
+      return { x: bestBase.position.x, y: bestBase.position.y };
+    }
+
+    // Nothing burning — follow the biggest squad that is actually going somewhere.
+    let bestSquad = null, bestSize = 0;
+    for (const [, g] of world.groups) {
+      if (g.status !== 'moving' && g.status !== 'attacking') continue;
+      if (g.memberIds.length > bestSize) { bestSize = g.memberIds.length; bestSquad = g; }
+    }
+    if (bestSquad) return { x: bestSquad.anchor.x, y: bestSquad.anchor.y };
+
+    // Otherwise pick a living base at random so the view keeps changing.
+    const alive = [...world.players.values()].filter(p => p.alive);
+    if (alive.length) {
+      const p = alive[Math.floor(Math.random() * alive.length)];
+      return { x: p.base.position.x, y: p.base.position.y };
+    }
+    return null;
+  }
+
+  /** Leave attract mode and hand the screen over to a real match. */
+  _endAttract() {
+    if (!this._attract) return;
+    this._attract = false;
+    this._conn?.close();
+    this._conn = null;
+    this._world = new WorldView();
+    this._selection = new Selection();
+    this._pings = [];
+    this._input.rebind(this._world, this._selection);
+  }
+
   // ── Match lifecycle ────────────────────────────────────────────────────────
 
   /**
@@ -218,6 +341,8 @@ export class Game {
    * @param {string}  [opts.name]    display name shown to other players
    */
   async startMatch(mode = 'ffa', { online = false, name = 'Player' } = {}) {
+    this._endAttract();   // stop the demo match running behind the menu
+
     this._mode = mode;
     this._online = online;
     this._name = name;   // kept so "Play Again" can rejoin without asking again
@@ -232,6 +357,9 @@ export class Game {
       // a world that will silently never update.
       this._conn = null;
       this.onConnectionFailed?.(this._lastConnError ?? 'unreachable');
+      // Put the demo match back, so the menu keeps moving instead of sitting
+      // frozen on whatever frame it happened to stop at.
+      this.startAttract().catch(() => {});
       return false;
     }
 
@@ -247,8 +375,11 @@ export class Game {
     cam.y = WORLD_SIZE / 2;
     cam.zoom = (cam.width / WORLD_SIZE) * 0.98;
 
-    this._running = true;
-    this._app.ticker.add(() => this._frame());
+    // Reveals the HUD, which is hidden by CSS until this class is present.
+    document.body.classList.add('playing');
+    this._input.setEnabled(true);
+
+    this._startTicker();
     return true;
   }
 
@@ -265,6 +396,13 @@ export class Game {
     // Rebuild the visible world for "now minus a little", smoothly.
     world.sample(performance.now());
     if (!world.ready) return;
+
+    if (this._attract) {
+      // Demo behind the menu: cinematic camera, no input, no HUD, no win check.
+      this._updateAttractCamera(dt);
+      this._renderer.render(world, this._camera, this._selection, [], []);
+      return;
+    }
 
     this._input.update(dt);
     this._updateCamera();

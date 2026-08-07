@@ -1,4 +1,5 @@
 import { dist2, WORLD_SIZE, MINE_NODE_RADIUS, BASE_DEFENSE_RADIUS } from '@nexus/sim';
+import { isTypingInto } from '../dom.js';
 
 /**
  * InputSystem
@@ -163,6 +164,10 @@ export class InputSystem {
     window.addEventListener('mouseup',     e => this._onMouseUp(e));
 
     window.addEventListener('keydown', e => {
+      // Never react while the player is typing — otherwise entering a name
+      // pans the camera with WASD, pings the map with 1-4, and space snaps to
+      // base instead of producing a space.
+      if (isTypingInto(e)) return;
       this._keys[e.code] = true;
       if (!this._enabled) return;
       switch (e.code) {
@@ -170,6 +175,12 @@ export class InputSystem {
         case 'Tab':    e.preventDefault(); this.cycleFocus(); break;
         case 'KeyF':   this.doDefend(); break;
         case 'Escape': this._sel.clear(); break;
+
+        // Squad management. These were advertised in the controls list but
+        // never actually bound — the commands existed, nothing called them.
+        case 'KeyX':   this.doSplit(); break;
+        case 'KeyC':   this.doMerge(); break;
+        case 'KeyV':   this.doBalance(); break;
 
         // Map pings — a small fixed vocabulary instead of text chat. Gives most
         // of the coordination value without needing moderation, reporting and

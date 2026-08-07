@@ -1,4 +1,5 @@
 import { Game } from './Game.js';
+import { isTypingInto } from './dom.js';
 
 let game = null;
 
@@ -24,7 +25,11 @@ function initCollapsiblePanels() {
 
   // Hotkeys — a key toggles the panel that declares it.
   window.addEventListener('keydown', (e) => {
-    // Ignore while typing in an input (none here, but safe).
+    // MUST come first. These hotkeys are plain letters (H, Q, B) and they call
+    // preventDefault, so without this guard those characters simply cannot be
+    // typed anywhere on the page — you could not put an "h" in your name.
+    if (isTypingInto(e)) return;
+
     for (const panel of panels) {
       if (panel.dataset.hotkey && panel.dataset.hotkey === e.code) {
         panel.classList.toggle('collapsed');
@@ -40,6 +45,11 @@ async function main() {
   await game.init();
 
   initCollapsiblePanels();
+
+  // Start a real match playing behind the menu straight away. It runs entirely
+  // in this browser, so it costs the server nothing, and it shows a newcomer
+  // what the game actually is far faster than any description.
+  game.startAttract().catch(err => console.warn('[nexus] demo match unavailable:', err));
 
   // Show intro, wait for the player to pick a mode.
   const intro  = document.getElementById('intro');

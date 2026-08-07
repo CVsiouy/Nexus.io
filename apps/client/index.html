@@ -344,68 +344,119 @@
       color: #1a2a40; font-family: 'Inter', monospace;
     }
 
-    /* ─── Intro Screen ─── */
+    /* ─── Menu ───────────────────────────────────────────────────────────────
+       A live match plays behind this. The scrim is only just opaque enough to
+       keep text legible — the movement underneath is the best advert the game
+       has, so it must not be hidden behind a solid panel. */
     #intro {
-      position: fixed; inset: 0;
-      background: rgba(244,244,244,0.97);
+      position: fixed; inset: 0; z-index: 100;
       display: flex; flex-direction: column;
       align-items: center; justify-content: center;
-      gap: 0; z-index: 100;
-      backdrop-filter: blur(4px);
+      padding: 24px;
+      /* Darkest in the middle where the text sits, clearing toward the edges
+         so the game is still visible around it. */
+      background:
+        radial-gradient(ellipse at center, rgba(244,246,249,0.93) 0%, rgba(244,246,249,0.72) 45%, rgba(244,246,249,0.45) 100%);
+      backdrop-filter: blur(2px);
+      transition: opacity .5s ease;
+      overflow-y: auto;
     }
+
+    /* The HUD is always in the DOM; keep it out of sight until play starts. */
+    body:not(.playing) #hud { display: none; }
+
     #intro .game-title {
       font-family: 'Rajdhani', sans-serif;
-      font-size: 80px; font-weight: 700;
-      color: #0077cc; letter-spacing: 4px;
-      line-height: 1; margin-bottom: 8px;
-      text-shadow: 0 4px 24px rgba(0,119,204,0.18);
+      font-size: clamp(52px, 9vw, 88px); font-weight: 700;
+      color: #0077cc; letter-spacing: 5px;
+      line-height: 1; margin-bottom: 4px;
+      text-shadow: 0 2px 0 rgba(255,255,255,0.9), 0 6px 30px rgba(0,119,204,0.25);
     }
     #intro .game-title span { color: #2c3e50; }
     #intro .tagline {
-      font-size: 13px; color: #7b8fa1;
-      letter-spacing: 4px; text-transform: uppercase;
-      margin-bottom: 42px; font-weight: 500;
+      font-size: 12px; color: #5b7185;
+      letter-spacing: 5px; text-transform: uppercase;
+      margin-bottom: 30px; font-weight: 600;
+      text-shadow: 0 1px 0 rgba(255,255,255,0.8);
     }
 
-    /* How-to panel */
-    #intro .how-panel {
-      background: rgba(255,255,255,0.9);
-      border: 1.5px solid rgba(0,0,0,0.08);
-      border-radius: 16px;
-      padding: 24px 32px;
-      max-width: 580px; width: 90%;
-      margin-bottom: 36px;
-      box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+    /* ── Play row: the one thing that matters ── */
+    .play-row {
+      display: flex; gap: 10px; align-items: stretch;
+      flex-wrap: wrap; justify-content: center;
+      pointer-events: all;
     }
-    #intro .how-panel .how-title {
+    .play-row .name-input { width: 220px; }
+    .btn-play {
+      background: linear-gradient(135deg, #16a34a, #047857);
+      color: #fff; border: none; cursor: pointer;
+      padding: 15px 44px; border-radius: 50px;
       font-family: 'Rajdhani', sans-serif;
-      font-size: 11px; font-weight: 700;
-      letter-spacing: 3px; color: #7b8fa1;
-      text-transform: uppercase; margin-bottom: 16px;
-      text-align: center;
+      font-size: 21px; font-weight: 700; letter-spacing: 3px;
+      box-shadow: 0 6px 22px rgba(22,163,74,0.42);
+      transition: transform .15s ease, box-shadow .15s ease, background .15s ease;
     }
-    #intro .controls-grid {
-      display: grid; grid-template-columns: 1fr 1fr;
-      gap: 8px 20px; margin-bottom: 18px;
+    .btn-play:hover { transform: translateY(-2px); background: linear-gradient(135deg, #1cc45c, #059669); box-shadow: 0 10px 30px rgba(22,163,74,0.5); }
+    .btn-play:active { transform: translateY(0); }
+    .btn-play:disabled { opacity: .55; cursor: wait; transform: none; }
+
+    /* ── Practice, deliberately quieter than Play ── */
+    .practice-row {
+      display: flex; gap: 8px; flex-wrap: wrap; justify-content: center;
+      margin-top: 4px; pointer-events: all;
     }
-    #intro .ctrl-item {
-      display: flex; align-items: center; gap: 8px;
-      font-size: 12px; color: #3d5166;
+    .btn-practice {
+      background: rgba(255,255,255,0.82);
+      border: 1.5px solid #cbd5e1; color: #3d5166;
+      padding: 8px 20px; border-radius: 40px; cursor: pointer;
+      font-family: 'Rajdhani', sans-serif;
+      font-size: 12px; font-weight: 700; letter-spacing: 1.5px;
+      transition: all .15s ease;
     }
-    #intro .ctrl-item kbd {
-      background: #e2e8f0; border: 1px solid #b0bec5;
-      border-radius: 5px; padding: 2px 7px;
-      font-size: 10px; font-weight: 700;
-      color: #1a2a40; font-family: monospace;
-      white-space: nowrap; flex-shrink: 0;
+    .btn-practice:hover { border-color: #0077cc; color: #0077cc; background: #fff; }
+
+    .menu-note {
+      font-family: 'Rajdhani', sans-serif;
+      font-size: 11px; letter-spacing: 2px; text-transform: uppercase;
+      color: #7b8fa1; margin: 22px 0 8px;
+      display: flex; align-items: center; gap: 12px; width: min(420px, 80vw);
     }
-    #intro .how-rules {
-      border-top: 1px solid #e2e8f0;
-      padding-top: 14px;
-      font-size: 12px; color: #7b8fa1;
-      line-height: 1.8; text-align: center;
+    .menu-note::before, .menu-note::after {
+      content: ''; flex: 1; height: 1px; background: rgba(0,0,0,0.12);
     }
-    #intro .how-rules strong { color: #0077cc; }
+
+    /* ── Three pillars, not a wall of text ── */
+    .pillars {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+      gap: 12px; margin-top: 34px;
+      width: min(760px, 92vw); pointer-events: none;
+    }
+    .pillar {
+      background: rgba(255,255,255,0.86);
+      border: 1px solid rgba(0,0,0,0.07);
+      border-radius: 14px; padding: 15px 18px;
+      box-shadow: 0 3px 14px rgba(0,0,0,0.07);
+    }
+    .pillar h3 {
+      font-family: 'Rajdhani', sans-serif; font-size: 13px; font-weight: 700;
+      letter-spacing: 1.5px; text-transform: uppercase;
+      color: #0077cc; margin-bottom: 6px;
+    }
+    .pillar p { font-size: 12.5px; line-height: 1.65; color: #46596b; }
+    .pillar strong { color: #1a2a40; font-weight: 600; }
+
+    /* ── Compact controls ── */
+    .keys {
+      display: flex; flex-wrap: wrap; gap: 7px 16px; justify-content: center;
+      margin-top: 20px; width: min(760px, 92vw); pointer-events: none;
+    }
+    .keys .k { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: #46596b; }
+    .keys kbd {
+      background: rgba(255,255,255,0.95); border: 1px solid #b0bec5;
+      border-bottom-width: 2px; border-radius: 5px; padding: 2px 7px;
+      font-size: 10px; font-weight: 700; color: #1a2a40;
+      font-family: monospace; white-space: nowrap;
+    }
 
     .mode-buttons { display: flex; gap: 16px; flex-wrap: wrap; justify-content: center; }
     .start-btn {
@@ -986,47 +1037,65 @@
 
   </div><!-- /#hud -->
 
-  <!-- ─── Intro Screen ─── -->
+  <!-- ─── Menu ─────────────────────────────────────────────────────────────
+       A real match runs behind this the whole time you are reading it. The
+       scrim above is only just opaque enough to keep the text readable. -->
   <div id="intro">
     <div class="game-title">NEXUS<span>.</span>IO</div>
     <div class="tagline">Mother Base War</div>
 
-    <div class="how-panel">
-      <div class="how-title">How to Play</div>
-      <div class="controls-grid">
-        <div class="ctrl-item"><kbd>Click squad</kbd> Select it</div>
-        <div class="ctrl-item"><kbd>Click ground</kbd> Move there</div>
-        <div class="ctrl-item"><kbd>Click enemy</kbd> Attack (commits!)</div>
-        <div class="ctrl-item"><kbd>Tab</kbd> Cycle your squads</div>
-        <div class="ctrl-item"><kbd>Space</kbd> Focus mother base</div>
-        <div class="ctrl-item"><kbd>X / C</kbd> Split / Merge</div>
-        <div class="ctrl-item"><kbd>V / F</kbd> Balance / Defend</div>
-        <div class="ctrl-item"><kbd>1 2 3 4</kbd> Ping: attack / defend / help / retreat</div>
-      </div>
-      <div class="how-rules">
-        Your <strong>mother base mines gold</strong> automatically. Spend it in the Build bar on
-        <strong>turrets</strong> (auto-defend your base) or <strong>soldiers</strong> (attack rivals).<br>
-        Soldiers always move as a <strong>squad in formation</strong>. A squad must be a <strong>full formation of 15</strong> before you can move it or send it to attack — the left panel shows <strong>READY ▶</strong> when it is.<br>
-        A squad sent to <strong>attack is committed</strong> — you can't recall it until its target falls or it's wiped out.<br>
-        You only see around your base or your selected squad. <strong>Destroy every rival mother base to win.</strong>
-      </div>
-    </div>
-
-    <!-- ONLINE: play against real people on the game server. -->
-    <div class="mode-buttons">
+    <!-- The one thing that matters: name, then play. -->
+    <div class="play-row">
       <input id="player-name" class="name-input" type="text" maxlength="16"
              placeholder="Your name" autocomplete="off" spellcheck="false" />
-      <button id="start-online" class="start-btn online">🌐 PLAY ONLINE · FREE-FOR-ALL</button>
-      <div id="conn-status" class="conn-status"></div>
+      <button id="start-online" class="btn-play">PLAY</button>
+    </div>
+    <div id="conn-status" class="conn-status"></div>
+
+    <div class="menu-note">or practise offline against bots</div>
+    <div class="practice-row">
+      <button id="start-ffa" class="btn-practice">FREE-FOR-ALL</button>
+      <button id="start-team" class="btn-practice">TEAM · BLUE vs RED</button>
+      <button id="start-mining" class="btn-practice">MINING · CAPTURE NODES</button>
     </div>
 
-    <div class="mode-divider"><span>or practise offline against bots</span></div>
+    <!-- Three pillars instead of a paragraph. Everything here is checked
+         against what the game actually does. -->
+    <div class="pillars">
+      <div class="pillar">
+        <h3>Your base mines gold</h3>
+        <p>It earns on its own, forever. Spend it on <strong>soldiers</strong>,
+           on <strong>walls</strong> to ring your base, or on
+           <strong>mining upgrades</strong> to earn faster.</p>
+      </div>
+      <div class="pillar">
+        <h3>Fight in squads of 15</h3>
+        <p>New soldiers wait safely inside your base. A squad must reach a
+           <strong>full 15</strong> before it can move out — the left panel
+           shows <strong>READY</strong> when it can.</p>
+      </div>
+      <div class="pillar">
+        <h3>Attacking is a commitment</h3>
+        <p>A squad sent to attack <strong>cannot be recalled</strong> until its
+           target falls. Defenders fight harder than attackers, so leaving home
+           empty is how you lose.</p>
+      </div>
+    </div>
 
-    <!-- PRACTICE: the same game, simulated inside your own browser. -->
-    <div class="mode-buttons">
-      <button id="start-ffa" class="start-btn">▶ FREE-FOR-ALL</button>
-      <button id="start-team" class="start-btn alt">▶ TEAM · BLUE vs RED</button>
-      <button id="start-mining" class="start-btn mine">⛏️ MINING · CAPTURE NODES</button>
+    <div class="keys">
+      <span class="k"><kbd>Click</kbd> select squad</span>
+      <span class="k"><kbd>Click ground</kbd> move</span>
+      <span class="k"><kbd>Click enemy</kbd> attack</span>
+      <span class="k"><kbd>Drag</kbd> select many</span>
+      <span class="k"><kbd>Space</kbd> your base</span>
+      <span class="k"><kbd>Tab</kbd> next squad</span>
+      <span class="k"><kbd>F</kbd> defend</span>
+      <span class="k"><kbd>R</kbd> release garrison</span>
+      <span class="k"><kbd>X</kbd> split</span>
+      <span class="k"><kbd>C</kbd> merge</span>
+      <span class="k"><kbd>V</kbd> balance</span>
+      <span class="k"><kbd>1-4</kbd> ping team</span>
+      <span class="k"><kbd>WASD</kbd> pan</span>
     </div>
   </div>
 
