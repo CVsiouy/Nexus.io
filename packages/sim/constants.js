@@ -27,6 +27,12 @@ export const LATE_JOIN_GOLD_MAX           = 600;
 export const BASE_HP          = 10000; // mother base is a fortress (all modes)
 export const BOSS_HP          = 5000;
 // Mother base slowly heals if it hasn't been hit for a while.
+// NOTE: healing this fast means a battered base is back to full in about a
+// minute, so damage only counts if you finish the job in one push. That looked
+// like the cause of stalled endgames, but slowing it to 70 HP/sec over 30 bot
+// matches changed the resolution rate by exactly nothing — so it was reverted
+// rather than kept on a hunch. Still worth revisiting against HUMAN play,
+// where follow-up assaults are better coordinated than a bot manages.
 export const BASE_HP_REGEN_DELAY = 20000; // ms of calm before the base heals
 export const BASE_HP_REGEN_RATE  = 220;   // HP/sec healed
 
@@ -126,9 +132,23 @@ export const CONQUEST_GOLD_LUMP = 300;  // one-time gold bounty, flat
 export const CONQUEST_XP        = 180;  // one-time XP bounty (× victim level factor)
 
 // ─── Population & supply ──────────────────────────────────────────────────────
-// Big budgets so you can station large formations and still have troops to donate.
-export const POP_BASE       = 26;   // base population budget
-export const POP_PER_LEVEL  = 10;   // extra budget per base level
+// A cap only does something if it is actually reached. The old numbers gave a
+// level-13 base room for 156 soldiers, and 30 bot-only matches showed players
+// using barely 30% of that — so it never bound, never forced a decision, and
+// the HUD just displayed a meaningless "34/156".
+//
+// Chosen by measurement, not feel. Three settings over 24 matches each:
+//     26 + 10/level   37% of cap used   (never binds — the old numbers)
+//     24 +  8/level   51% of cap used   ← this one
+//     20 +  5/level   70% of cap used   (binds hard, and matches stopped
+//                                        resolving: armies too small to finish)
+//
+// 24 + 8 makes the ceiling real for a strong player without shrinking armies so
+// far that nobody can crack a defended base. Hitting it is the point: once your
+// army is full, gold has to go somewhere else — walls, or
+// mining upgrades — and that is a real choice rather than an automatic one.
+export const POP_BASE       = 24;
+export const POP_PER_LEVEL  = 8;
 // Garrison: soldiers can be HELD safely inside the base and released together as
 // a full formation (so they aren't picked off one-by-one as they spawn).
 export const GARRISON_MAX   = 15;

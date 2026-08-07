@@ -26,7 +26,30 @@ export const COMMAND_RATE_LIMIT = 30;
 export const SEATS = 8;
 
 /** Hard cap on match length, so a stalemate between turtling players still ends. */
-export const MATCH_LIMIT_MS = 20 * 60 * 1000;
+/**
+ * Match length cap.
+ *
+ * SET BY MEASUREMENT. 12 minutes was the goal, and 24-match bot runs at each
+ * length showed it does not work — the final duel between the last two bases is
+ * the slow part, so trimming the clock cuts off exactly where matches resolve:
+ *
+ *     12 min    0% of matches resolved   (every one decided on XP)
+ *     15 min   13%
+ *     16 min    4-13%
+ *     18 min   38%   ← here
+ *     20 min   58%
+ *
+ * 18 minutes is the compromise: two minutes shorter than before, keeping most
+ * of the decisive finishes. Note these are BOT numbers and therefore
+ * pessimistic — bots never merge their under-strength squads back together,
+ * whereas a human can (X/C/V), so human matches should finish harder and
+ * faster than this.
+ *
+ * To get a genuinely 12-minute match you would need the endgame itself to be
+ * faster — escalating pressure late on (income ramp, a shrinking play area, or
+ * base healing switching off after minute N) rather than a shorter clock.
+ */
+export const MATCH_LIMIT_MS = 18 * 60 * 1000;
 
 /** How long a disconnected player's seat is held before it's given away. */
 export const RECONNECT_GRACE_MS = 90 * 1000;

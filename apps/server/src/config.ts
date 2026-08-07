@@ -55,7 +55,7 @@ export const config = {
    * learn more from six 8-minute matches than two 20-minute ones, and nobody
    * wants their first game to be twenty minutes long.
    */
-  matchLimitMs: num('MATCH_LIMIT_MS', 20 * 60 * 1000),
+  matchLimitMs: num('MATCH_LIMIT_MS', 18 * 60 * 1000),
 
   /** Where match telemetry and feedback are written. */
   telemetryDir: str('TELEMETRY_DIR', '/app/data'),

@@ -384,6 +384,19 @@ export class CombatSystem {
         if (g) {
           const i = g.memberIds.indexOf(id);
           if (i >= 0) g.memberIds.splice(i, 1);
+
+          // If that was the last member, retire the squad here and now.
+          //
+          // GroupSystem._cull also removes empty squads, but it runs EARLIER in
+          // the tick order (group → combat), so a squad wiped out during combat
+          // would survive as an empty shell until the next tick — long enough
+          // to be snapshotted and sent to every client, which showed up as a
+          // phantom "0/15" entry flickering in the squad panel.
+          if (g.memberIds.length === 0) {
+            state.event('groupWiped', { id: g.id, ownerId: g.ownerId });
+            state.groups.delete(g.id);
+            state.freeId(g.id);
+          }
         }
 
         state.event('soldierDied', { id, ownerId: sol.ownerId, x: sol.position.x, y: sol.position.y });
