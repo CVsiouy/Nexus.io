@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { Simulation, TICK_MS } from '../Simulation.js';
 import { AISystem } from '../systems/AISystem.js';
 import {
-  slotAtAngle, solidAtAngle, crossesWall, outermostLayer,
+  slotAtAngle, solidAtAngle, crossesWall, outermostLayer, blockingLayerFor,
 } from '../walls.js';
 import {
   WORLD_SIZE, BOSS_COUNT, BOSS_FIRST_MS, BOSS_STAGGER_MS, BOSS_GOLD_REWARD,
@@ -133,6 +133,45 @@ test('soldiers do not end up inside a walled base in a real match', () => {
   }
 });
 
+// ── Multiple rings ───────────────────────────────────────────────────────────
+
+test('after breaching the outer ring, the NEXT ring becomes the obstacle', () => {
+  // The bug: code asked for "the outermost ring with cells", so once you were
+  // through the outer ring it decided you were past the wall — while the inner
+  // ring still blocked you. Squads stranded between two rings could neither
+  // advance nor break anything.
+  const base = { position: { x: 500, y: 500 } };
+  base.walls = [ring(80, 10), ring(120, 12)];    // inner, outer
+
+  const outside = { x: 500 + 300, y: 500 };
+  assert.equal(blockingLayerFor(base, outside)?.radius, 120,
+    'from outside, the OUTER ring should be the obstacle');
+
+  // Punch a hole in the outer ring on the bearing we are approaching from.
+  const outer = base.walls[1];
+  const slot = slotAtAngle(outer, 0);
+  outer.cells = outer.cells.filter(c => c.slot !== slot);
+  assert.equal(blockingLayerFor(base, outside)?.radius, 80,
+    'with the outer ring breached on our bearing, the INNER ring is now the obstacle');
+
+  // And once we are inside both, nothing blocks.
+  assert.equal(blockingLayerFor(base, { x: 500 + 40, y: 500 }), null,
+    'inside every ring, the path should be clear');
+});
+
+test('a ring only blocks the bearings where it still stands', () => {
+  const base = { position: { x: 500, y: 500 } };
+  base.walls = [ring(120, 12, [0])];
+  const layer = base.walls[0];
+
+  const openBearing = at(base, layer, 0, 300);
+  assert.equal(blockingLayerFor(base, openBearing), null,
+    'approaching through the hole should not be blocked');
+
+  const solidBearing = at(base, layer, 6, 300);
+  assert.ok(blockingLayerFor(base, solidBearing), 'approaching a standing section should be blocked');
+});
+
 // ── Defenders hold behind their wall ─────────────────────────────────────────
 
 test('a defending squad stays inside its own wall instead of marching out', () => {
@@ -201,7 +240,7 @@ test('a boss never moves', () => {
 
 test('a boss starts walled and never repairs or rebuilds it', () => {
   const sim = new Simulation({ mode: 'ffa', logger: quiet });
-  run(sim, (BOSS_FIRST_MS / 1000) + 5);
+  runUndisturbed(sim, (BOSS_FIRST_MS / 1000) + 5);
   const boss = [...sim.state.bosses.values()][0];
 
   assert.equal(boss.walls.length, 1, 'a boss should start with exactly one ring');
@@ -213,7 +252,7 @@ test('a boss starts walled and never repairs or rebuilds it', () => {
   const damaged = layer.cells[0].hp;
   layer.cells.splice(1, 1);
 
-  run(sim, 200);
+  runUndisturbed(sim, 200);
 
   assert.equal(layer.cells[0].hp, damaged, 'a boss wall healed itself');
   assert.equal(layer.cells.length, cellsAtStart - 1, 'a boss rebuilt a destroyed wall cell');
@@ -221,12 +260,12 @@ test('a boss starts walled and never repairs or rebuilds it', () => {
 
 test('a boss never heals', () => {
   const sim = new Simulation({ mode: 'ffa', logger: quiet });
-  run(sim, (BOSS_FIRST_MS / 1000) + 5);
+  runUndisturbed(sim, (BOSS_FIRST_MS / 1000) + 5);
   const boss = [...sim.state.bosses.values()][0];
 
   boss.hp = boss.maxHp * 0.4;
   const hurt = boss.hp;
-  run(sim, 200);
+  runUndisturbed(sim, 200);
   assert.ok(boss.hp <= hurt, `the boss regenerated: ${hurt} → ${boss.hp}`);
 });
 

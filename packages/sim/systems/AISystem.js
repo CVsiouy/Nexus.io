@@ -5,9 +5,10 @@ import {
   BOT_DEFENCE_SAFETY, BOT_CAUTION,
   BOT_MIN_HOME, BOT_ATTACK_EDGE, BOT_PATIENCE,
   BOT_RESTLESS_AFTER, BOT_RESTLESS_DECAY, BOT_RESTLESS_FLOOR, BOT_BOSS_APPEAL,
+  BOT_MINE_TARGET, BOT_MINE_SOLO_RADIUS, BOT_MINE_MAX_SHARE, WALL_BODY_HP, BOSS_DEFENDER_EDGE,
   BASE_DEFENSE_RADIUS, MAX_WALL_LAYERS,
 } from '../constants.js';
-import { attackWithGroup, setDefending, moveGroup, releaseGarrison } from './GroupSystem.js';
+import { attackWithGroup, setDefending, setDefendNode, moveGroup, releaseGarrison } from './GroupSystem.js';
 import { buyMineUpgrade, mineUpgradeCost } from './ProgressionSystem.js';
 import { outerBlockingLayer } from '../walls.js';
 
@@ -278,41 +279,96 @@ export class AISystem {
 
     // Gate 3: the surplus must cover a real squad. Sending less than a full
     // formation is feeding, and squads cannot deploy below 15 anyway.
+    //
+    // A squad already holding a node is NOT available. It is doing a job, and
+    // an unlocked squad is not the same as an idle one. Without this the bot
+    // flip-flops: it posts a squad to a node, and on the very next think that
+    // squad is back in the pool and gets marched off to attack, so the node it
+    // was sent to capture never actually flips.
+    //
+    // The test is `defendNodeId`, not the status. setDefendNode leaves status
+    // as 'defending' — a node-holder and a base-guard are the same state to
+    // everything else, and only the node id tells them apart.
+    //
+    // Home defence still outranks this: _holdHome calls setDefending on every
+    // unlocked squad the moment the base is threatened, and setDefending clears
+    // defendNodeId, so node-sitters come home like anyone else.
     const deployable = state.groupsOf(player.id)
-      .filter(g => !g.locked && (g.memberIds.length >= GROUP_MAX_SIZE || g.formed))
+      .filter(g => !g.locked && !g.defendNodeId
+                && (g.memberIds.length >= GROUP_MAX_SIZE || g.formed))
       .sort((a, b) => b.memberIds.length - a.memberIds.length);
 
-    if (!deployable.length || view.surplus < GROUP_MAX_SIZE) {
-      player._idleTicks++;
-      // Team mode: with nothing to spare offensively, help a pressed ally.
-      this._helpAlly(state, player, view);
-      return;
+    // ── Gate 4: is any target worth taking with what I can spare? ───────────
+    //
+    // ATTACKING IS TRIED FIRST, MINING SECOND. That ordering is the whole
+    // design: a node is what a bot does when it cannot usefully attack, not
+    // something it stops to do on the way. Putting mining first made bots in
+    // mining mode farm quietly and barely fight — assaults per match fell to
+    // half what the same bots manage in FFA.
+    //
+    // `force` is the ACTUAL headcount of the squads that would go, not
+    // squads × GROUP_MAX_SIZE. Squads are routinely not fifteen — a released
+    // garrison can be forty, a mauled squad six — and assuming the nominal size
+    // made the bot both overrate thin squads and underrate massed ones.
+    if (deployable.length && view.surplus >= GROUP_MAX_SIZE) {
+      const canSend = Math.floor(view.surplus / GROUP_MAX_SIZE);
+      const wave = deployable.slice(0, Math.min(canSend, deployable.length));
+      const force = wave.reduce((t, g) => t + g.memberIds.length, 0);
+
+      const target = wave.length ? this._pickTarget(state, player, tier, force, census) : null;
+      if (target) {
+        // Everything in the wave goes at the SAME target, together.
+        for (const g of wave) attackWithGroup(g, target.base.id);
+        player._idleTicks = 0;
+        player._calm = 0;
+        return;
+      }
     }
 
-    // How many squads can leave without breaking the home budget.
-    const canSend = Math.max(0, Math.floor(view.surplus / GROUP_MAX_SIZE));
-    if (canSend <= 0) { player._idleTicks++; return; }
-
-    // Mining mode: an uncontested node is cheaper than a base assault.
-    if (state.mode === 'mining') {
+    // ── Nothing worth attacking. In mining mode, go and earn instead. ───────
+    //
+    // Reaching here means either the bot is too small to attack yet or every
+    // target is currently out of reach. Both are exactly when a node is worth
+    // having, and nodes are cheapest at minute one while they are still unowned
+    // and unguarded. Previously this sat behind the attack gate AND demanded
+    // two full squads of surplus, so a bot did not so much as look at a node
+    // until it had ~30 spare soldiers — a measured median of 640 SECONDS into
+    // an 18-minute match.
+    //
+    // Node duty is also the one commitment that is fully REVERSIBLE. An
+    // attacking squad is locked until its target dies or it does, but a
+    // node-sitter is recalled by _holdHome the instant the base is threatened.
+    // So the "never send your last squad" caution that rightly governs attacks
+    // need not govern this — provided the node is close enough to come back
+    // from, which is what BOT_MINE_SOLO_RADIUS checks.
+    if (state.mode === 'mining' && deployable.length
+        && this._nodesOwned(state, player.id) < BOT_MINE_TARGET
+        && this._canSpareForMining(state, player)) {
       const node = this._nearestFreeNode(state, player);
-      if (node && Math.random() < 0.6) {
-        moveGroup(deployable[0], node.position.x, node.position.y);
+      // Plenty of squads: any node. Down to the last one: only a node close
+      // enough to home that recalling it is cheap.
+      const soloOk = node && dist2(player.base.position, node.position)
+                          <= BOT_MINE_SOLO_RADIUS * BOT_MINE_SOLO_RADIUS;
+      if (node && (deployable.length >= 2 || soloOk)) {
+        // The SMALLEST squad goes. `deployable` is sorted biggest-first, so
+        // that is the tail. Capturing a node is decided by how many bodies
+        // stand on it, not by how strong they are, and the big squad is the
+        // only thing that can crack a base — sending the 40-man stack to
+        // babysit a node and keeping the 15-man one to attack with has it
+        // exactly backwards.
+        setDefendNode(deployable.pop(), node);
         player._idleTicks = 0;
         return;
       }
     }
 
-    // Gate 4: is any target actually worth taking with what I can spare?
-    const force = Math.min(canSend, deployable.length) * GROUP_MAX_SIZE;
-    const target = this._pickTarget(state, player, tier, force, census);
-    if (!target) { player._idleTicks++; return; }
-
-    for (let i = 0; i < Math.min(canSend, deployable.length); i++) {
-      attackWithGroup(deployable[i], target.base.id);
-    }
-    player._idleTicks = 0;
-    player._calm = 0;
+    // Nothing to attack, nothing to mine. It does NOT settle for a target it
+    // cannot beat: _idleTicks rises, _pickTarget's `edge` decays through
+    // BOT_RESTLESS_*, and production keeps adding to the next wave. Waiting one
+    // more think and arriving with two squads beats arriving alone twice.
+    player._idleTicks++;
+    // Team mode: with nothing to spare offensively, help a pressed ally.
+    if (view.surplus < GROUP_MAX_SIZE) this._helpAlly(state, player, view);
   }
 
   /**
@@ -346,8 +402,9 @@ export class AISystem {
     // marches on your base, so committing to one risks only the squads sent.
     for (const [, boss] of state.bosses) {
       const defenders = this._visibleDefendersAt(state, boss.position, 'boss');
-      const walls = boss.walls?.some(l => l.cells.length) ? 1.35 : 1;
-      const required = Math.max(1, defenders * DEFENDER_EDGE * walls * edge);
+      // Boss guards keep their defender's edge, so they cost more per body.
+      const required = this._forceNeeded(
+        defenders * BOSS_DEFENDER_EDGE, this._wallBodies(boss), edge);
       if (force < required) continue;
 
       const d = Math.sqrt(dist2(base.position, boss.position)) || 1;
@@ -365,10 +422,7 @@ export class AISystem {
       // What is visibly defending them. Garrisons are NOT counted — they are
       // invisible to human players, and reading them would be cheating.
       const defenders = this._visibleDefenders(state, other);
-
-      // Defenders are worth ~1.34 attackers each, and walls demand more still.
-      const walls = outerBlockingLayer(other.base) ? 1 + (other.base.walls.length / MAX_WALL_LAYERS) : 1;
-      const required = Math.max(1, defenders * DEFENDER_EDGE * walls * edge);
+      const required = this._forceNeeded(defenders, this._wallBodies(other.base), edge);
       if (force < required) continue;   // cannot take it — do not commit
 
       // Prefer the weakest and the nearest. Distance matters because the
@@ -421,10 +475,109 @@ export class AISystem {
     }
   }
 
+  /**
+   * How many attackers a target is worth, in bodies.
+   *
+   * THE BUG THIS REPLACES: walls used to be a MULTIPLIER on the defender count
+   *
+   *     required = max(1, defenders * DEFENDER_EDGE * walls * edge)
+   *
+   * so a base with three intact wall rings and every soldier tucked in its
+   * garrison scored `defenders = 0` — and zero times any wall factor is still
+   * zero. The whole expression collapsed to `max(1, 0)` = ONE. Bots therefore
+   * threw a single squad at fully fortified bases over and over, which is
+   * exactly the "he sends one squad that can't possibly win" complaint.
+   *
+   * Walls are now additive: they are HP that must be chewed through before the
+   * base can be touched at all, and that costs bodies whether or not anyone is
+   * standing behind them.
+   */
+  _forceNeeded(defenderBodies, wallBodies, edge) {
+    return Math.max(1, (defenderBodies + wallBodies) * edge);
+  }
+
+  /**
+   * A structure's walls expressed as "how many attackers to get through".
+   *
+   * Only the outermost intact ring matters — that is the one that has to fall
+   * before anything behind it can be reached. WALL_ATTACKERS_MAX caps how many
+   * soldiers can hit a ring at once, so a thicker ring costs time rather than
+   * more bodies; the body cost is what it takes to break through and still have
+   * a fighting force left on the other side.
+   */
+  _wallBodies(structure) {
+    const layers = structure?.walls;
+    if (!Array.isArray(layers) || !layers.length) return 0;
+
+    // Only the outermost ring that still has cells counts. That is the one
+    // standing between the attackers and everything else; the rings behind it
+    // are a problem for after it falls, and pricing all of them at once makes
+    // a three-ring base look unassailable and stops the match resolving.
+    let hp = 0;
+    for (let i = layers.length - 1; i >= 0; i--) {
+      const cells = layers[i]?.cells ?? [];
+      const layerHp = cells.reduce((t, c) => t + Math.max(0, c.hp ?? 0), 0);
+      if (layerHp > 0) { hp = layerHp; break; }
+    }
+    return hp / WALL_BODY_HP;
+  }
+
+  /**
+   * Is there room in the army for one more node errand?
+   *
+   * BOT_MINE_TARGET alone is a flat count, and a flat count is the wrong shape:
+   * population is capped, so three squads is most of an early army and a
+   * modest slice of a late one. Holding three nodes from minute two meant a
+   * mining-mode bot had nothing left to attack with — measured at 27 assaults
+   * per match against the 54 the same bots manage in FFA. They were farming,
+   * not playing.
+   *
+   * Capping mining at a SHARE of the squads instead keeps that honest at every
+   * stage of the match: a bot may always claim one node, and beyond that it has
+   * to actually be big enough to spare the bodies.
+   */
+  _canSpareForMining(state, player) {
+    const squads = state.groupsOf(player.id).filter(g => !g.locked);
+    const mining = squads.filter(g => g.defendNodeId).length;
+    const allowed = Math.max(1, Math.floor(squads.length * BOT_MINE_MAX_SHARE));
+    return mining < allowed;
+  }
+
+  /**
+   * Nodes this player has COMMITTED to — owned, or being walked to right now.
+   *
+   * Counting only owned nodes undercounts badly. Capturing one takes seconds of
+   * travel plus MINE_CAPTURE_TIME, while the bot thinks every couple of
+   * seconds, so a bot measuring ownership alone dispatches a fresh squad on
+   * every think until the first capture finally lands — and ends up with most
+   * of its army standing on nodes. What BOT_MINE_TARGET is meant to cap is how
+   * much of the army is tied up mining, so that is what gets counted.
+   */
+  _nodesOwned(state, ownerId) {
+    const claimed = new Set();
+    for (const [, node] of state.mineNodes) {
+      if (node.ownerId === ownerId) claimed.add(node.id);
+    }
+    for (const g of state.groupsOf(ownerId)) {
+      if (g.defendNodeId) claimed.add(g.defendNodeId);
+    }
+    return claimed.size;
+  }
+
+  /**
+   * The closest node worth going for: not already mine, and not already the
+   * destination of another of my squads. Two squads converging on one node is
+   * one squad wasted, and nothing downstream would ever notice.
+   */
   _nearestFreeNode(state, player) {
+    const spokenFor = new Set();
+    for (const g of state.groupsOf(player.id)) {
+      if (g.defendNodeId) spokenFor.add(g.defendNodeId);
+    }
+
     let best = null, bestD2 = Infinity;
     for (const [, node] of state.mineNodes) {
-      if (node.ownerId === player.id) continue;
+      if (node.ownerId === player.id || spokenFor.has(node.id)) continue;
       const d2 = dist2(player.base.position, node.position);
       if (d2 < bestD2) { bestD2 = d2; best = node; }
     }

@@ -159,6 +159,66 @@ export function cellPositions(base, layer) {
   return layer.cells.map(c => ({ ...cellPos(base, layer, c), cell: c }));
 }
 
+/**
+ * Which ring is actually standing between `fromPos` and the centre?
+ *
+ * Bases can have up to MAX_WALL_LAYERS concentric rings, and the answer is
+ * neither "the outermost ring" nor "the outermost complete ring" — it is the
+ * outermost ring that BOTH still encloses this point AND is solid on its
+ * bearing. Anything the attacker is already inside of, or that has a hole where
+ * they are standing, is not in their way.
+ *
+ * Getting this wrong is what stranded squads between two rings: after breaching
+ * the outer ring they were judged to be "past the wall", so they stopped
+ * attacking walls — while the inner ring still blocked them from the base. They
+ * could neither advance nor break anything.
+ *
+ * Returns null when the path to the centre is clear.
+ */
+export function blockingLayerFor(base, fromPos) {
+  const dx = fromPos.x - base.position.x;
+  const dy = fromPos.y - base.position.y;
+  const d = Math.hypot(dx, dy);
+  const angle = Math.atan2(dy, dx);
+
+  let best = null;
+  for (const l of base.walls) {
+    if (!l.cells.length) continue;
+    if (d <= l.radius) continue;              // already inside this ring
+    if (!solidAtAngle(l, angle)) continue;    // a hole sits on our bearing
+    if (!best || l.radius > best.radius) best = l;   // the first one we'd meet
+  }
+  return best;
+}
+
+/**
+ * The breach nearest to `fromPos`, if this ring has one.
+ *
+ * Returns a point just INSIDE the ring at the missing slot, i.e. the doorway to
+ * walk through. Null when the ring is still complete.
+ *
+ * This is what stops attackers standing uselessly against an already-broken
+ * wall: if there is a way in, head for it.
+ */
+export function nearestGap(base, layer, fromPos) {
+  const present = new Set(layer.cells.map(c => c.slot));
+  let best = null, bestD2 = Infinity;
+
+  for (let slot = 0; slot < layer.maxCells; slot++) {
+    if (present.has(slot)) continue;
+    const a = (slot / layer.maxCells) * Math.PI * 2 - Math.PI / 2;
+    // Aim a little inside the ring so they actually pass through it.
+    const r = layer.radius - WALL_CELL_SIZE;
+    const p = {
+      x: base.position.x + Math.cos(a) * r,
+      y: base.position.y + Math.sin(a) * r,
+    };
+    const d2 = (p.x - fromPos.x) ** 2 + (p.y - fromPos.y) ** 2;
+    if (d2 < bestD2) { bestD2 = d2; best = { slot, pos: p, angle: a }; }
+  }
+  return best;
+}
+
 /** Nearest alive cell of a layer to a point. Returns { cell, pos } or null. */
 export function nearestCell(base, layer, fromPos) {
   let best = null, bestD2 = Infinity;

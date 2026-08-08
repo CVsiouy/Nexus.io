@@ -51,6 +51,7 @@ test('a view starts empty and becomes ready after the first snapshot', () => {
 
 test('the view reproduces the simulation it was fed', () => {
   const h = harness();
+  h.deployMovingSquad(1400, 1400);
   h.push(60);
   h.push();
   // Draw far enough ahead that we hold on the newest snapshot.
@@ -123,6 +124,7 @@ test('holds on the newest snapshot instead of guessing past it', () => {
 
 test('entities that disappear from snapshots are removed from the view', () => {
   const h = harness();
+  h.deployMovingSquad(1400, 1400);
   h.push(80);
   h.draw(h.now() + INTERP_DELAY_MS + 10);
   assert.ok(h.view.soldiers.size > 0);
@@ -165,6 +167,7 @@ test('the buffer does not grow without bound', () => {
 
 test('selection tracks squads and drops ones that no longer exist', () => {
   const h = harness();
+  h.deployMovingSquad(1400, 1400);
   h.push(60);
   h.draw(h.now() + INTERP_DELAY_MS + 10);
 

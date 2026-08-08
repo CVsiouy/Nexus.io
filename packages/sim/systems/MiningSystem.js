@@ -1,18 +1,16 @@
 import { dist2 } from '../utils/helpers.js';
-import { Soldier } from '../entities.js';
-import { addSoldierToNearestGroup } from './GroupSystem.js';
-import {
-  MINE_CAPTURE_RANGE, MINE_CAPTURE_TIME, MINE_NODE_GOLD, MINE_NODE_SPAWN_MS,
-  MINE_NODE_GOLD_PER_SOLDIER, MINE_STATION_CAP,
-} from '../constants.js';
+import { MINE_CAPTURE_RANGE, MINE_CAPTURE_TIME, MINE_NODE_GOLD } from '../constants.js';
 
 /**
  * MiningSystem (Mining mode only)
  * ───────────────────────────────
  * Neutral gold nodes are captured by presence: park a squad on a node and it
- * flips to you (more soldiers = faster). A held node feeds gold to your base and
- * slowly grows its own defenders — a forward outpost. Bring more soldiers than
- * the current owner to take it from them.
+ * flips to you (more soldiers on it = faster). A held node pays its owner a
+ * flat +1 gold/sec. Bring more soldiers than the current owner to take it.
+ *
+ * A node grows nothing and produces nothing. Holding one costs you soldiers
+ * that could have been attacking somebody, and that trade — spread out for
+ * income, or concentrate and go for a kill — is the mode.
  */
 export class MiningSystem {
   update(state, dt, dtMs) {
@@ -45,22 +43,14 @@ export class MiningSystem {
       if (node.captureProg === 0) node.capturingBy = null;
     }
 
-    // Held node: pump gold (more stationed soldiers → higher rate) + grow defenders.
+    // A held node pays a flat trickle. It does NOT grow soldiers of its own and
+    // it does NOT pay more for parking an army on it — a node is income you
+    // have to hold, not a second base that fights for you.
     if (node.ownerId) {
       const owner = state.players.get(node.ownerId);
-      if (!owner?.alive) { node.ownerId = null; return; }
-      const garrison = Math.min(counts.get(node.ownerId) || 0, MINE_STATION_CAP);
-      node.goldRate = MINE_NODE_GOLD + garrison * MINE_NODE_GOLD_PER_SOLDIER;
+      if (!owner?.alive) { node.ownerId = null; node.goldRate = 0; return; }
+      node.goldRate = MINE_NODE_GOLD;
       owner.base.gold += node.goldRate * dt;
-
-      node.spawnTimer += dtMs;
-      if (node.spawnTimer >= MINE_NODE_SPAWN_MS && state.soldierPop(node.ownerId) + 1 <= state.popCap(owner)) {
-        node.spawnTimer = 0;
-        const a = Math.random() * Math.PI * 2, r = 30;
-        const s = new Soldier(state.newId(), node.ownerId, 'grunt', node.position.x + Math.cos(a) * r, node.position.y + Math.sin(a) * r);
-        state.soldiers.set(s.id, s);
-        addSoldierToNearestGroup(state, s);
-      }
     }
   }
 }

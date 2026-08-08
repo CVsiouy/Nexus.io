@@ -54,15 +54,28 @@ export const BOSS_WALL_CELL_HP  = 5200;
  * player squad could walk in and take it. These are elite guards, so cracking a
  * boss is a real commitment rather than a detour.
  */
-export const BOSS_SQUAD_SIZE     = 6;
+export const BOSS_SQUAD_SIZE     = 5;
 export const BOSS_SQUAD_INTERVAL_MS = 40000;
-export const BOSS_MAX_SQUADS     = 4;     // up to 24 guards, grown over ~2.5 min
-export const BOSS_SOLDIER_HP_MULT  = 2.4; // each guard is worth ~2.4 grunts of HP
-export const BOSS_SOLDIER_DMG_MULT = 1.7;
+export const BOSS_MAX_SQUADS     = 3;     // up to 24 guards, grown over ~2.5 min
+export const BOSS_SOLDIER_HP_MULT  = 2; // each guard is worth ~2.4 grunts of HP
+export const BOSS_SOLDIER_DMG_MULT = 1.5;
 
-/** Permanent income granted to whoever lands the killing blow. */
-export const BOSS_GOLD_REWARD = 2;       // gold/sec, forever — bounded by BOSS_COUNT
-export const BOSS_XP_REWARD   = 400;
+/**
+ * Permanent income granted to whoever lands the killing blow.
+ *
+ * Two schemes, chosen by BOSS_REWARD_SCALED:
+ *
+ *   false — flat: always BOSS_GOLD_REWARD, whoever you are.
+ *   true  — tapered: the full amount if you are still poor, a reduced amount
+ *           once your income is already above BOSS_REWARD_RICH_AT. Rewards the
+ *           kill either way, but stops the player who is already winning from
+ *           compounding hardest off the same objective.
+ */
+export const BOSS_GOLD_REWARD      = 2;    // gold/sec, forever — bounded by BOSS_COUNT
+export const BOSS_GOLD_REWARD_RICH = 1;    // …if already wealthy (scaled scheme)
+export const BOSS_REWARD_RICH_AT   = 6;    // gold/sec that counts as "already wealthy"
+export const BOSS_REWARD_SCALED    = true;
+export const BOSS_XP_REWARD        = 400;
 // Mother base slowly heals if it hasn't been hit for a while.
 // NOTE: healing this fast means a battered base is back to full in about a
 // minute, so damage only counts if you finish the job in one push. That looked
@@ -99,11 +112,28 @@ export const SOLDIER_RADIUS = 10;
 // Muster/defense ring around a mother base (~3× its size). Soldiers stationed
 // inside it shield the base: enemies must kill them before they can hit the base.
 export const BASE_DEFENSE_RADIUS = 160;
-// Defender's advantage (stance-based, position-independent): a soldier in a
-// DEFENDING squad deals more and takes less, so an equal defending force beats
-// an attacking one. Tuned so 15 defenders reliably beat 15 attackers.
-export const DEFENDER_ATK_MULT   = 1.1;  // defending soldiers hit a bit harder
-export const DEFENDER_DMG_TAKEN  = 0.82; // …and take a bit less (≈1.34× net → win with real losses)
+// Defender's advantage — REMOVED for players.
+//
+// A defending squad used to hit 1.1× and take 0.82×, a net ~1.34× edge, so an
+// equal force always lost on attack. Combined with walls that made attacking
+// even worse, the stable strategy was to sit still, and matches stopped
+// resolving. Attacking is now decided by numbers, positioning and walls alone —
+// all things a player controls — rather than by a hidden stance multiplier.
+//
+// 1.0 rather than deleting the terms: walls, base defence radius and the bot's
+// force budget all reason in units of "how many attackers is a defender worth",
+// and keeping the constant at unity leaves that arithmetic intact and one edit
+// away from being tuned back.
+export const DEFENDER_ATK_MULT   = 1.0;
+export const DEFENDER_DMG_TAKEN  = 1.0;
+
+// The BOSS keeps its defender's advantage, unchanged, at the old values.
+// Its guards are meant to be a fortified objective rather than a fair fight,
+// and this is deliberately separate from the player numbers above so that
+// tuning one never silently moves the other. Applied on top of
+// BOSS_SOLDIER_HP_MULT / BOSS_SOLDIER_DMG_MULT, exactly as before.
+export const BOSS_DEFENDER_ATK_MULT  = 1.1;
+export const BOSS_DEFENDER_DMG_TAKEN = 0.82;
 export const SURROUND_GAP   = 18;  // squad forms a ring this far outside the target
 // Soldiers hit far harder against a mother base (siege), so a slow one-at-a-time
 // assault still brings a base down in a reasonable time.
@@ -194,7 +224,7 @@ export const CONQUEST_XP        = 180;  // one-time XP bounty (× victim level f
 // far that nobody can crack a defended base. Hitting it is the point: once your
 // army is full, gold has to go somewhere else — walls, or
 // mining upgrades — and that is a real choice rather than an automatic one.
-export const POP_BASE       = 24;
+export const POP_BASE       = 15;
 export const POP_PER_LEVEL  = 8;
 // Garrison: soldiers can be HELD safely inside the base and released together as
 // a full formation (so they aren't picked off one-by-one as they spawn).
@@ -275,10 +305,17 @@ export const MINE_NODE_COUNT     = 9;    // total nodes on the map
 export const MINE_NODE_RADIUS    = 26;   // node body radius (also the capture ring)
 export const MINE_CAPTURE_RANGE  = 90;   // soldiers within this of a node contest it
 export const MINE_CAPTURE_TIME   = 4000; // ms for 1 soldier to flip a node (more = faster)
-export const MINE_NODE_GOLD      = 1.5;  // base gold/sec a captured node adds to its owner
-export const MINE_NODE_GOLD_PER_SOLDIER = 0.3; // extra gold/sec per soldier stationed on it
-export const MINE_STATION_CAP    = 10;   // soldiers beyond this don't add more gold
-export const MINE_NODE_SPAWN_MS  = 9000; // a held node grows a grunt this often
+/**
+ * A held node is worth a flat +1 gold/sec. Nothing else.
+ *
+ * It used to pay 1.5 plus 0.3 per soldier parked on it, which quietly turned
+ * every node into a reason to garrison it heavily — and it used to grow its own
+ * soldiers too, so nodes fought their own war. Both are gone: a node is a small
+ * steady income you have to hold, and holding it costs you soldiers you could
+ * have used elsewhere. That trade is the whole point of the mode.
+ */
+export const MINE_NODE_GOLD      = 1;    // flat gold/sec per captured node
+export const MINE_STATION_CAP    = 10;   // (kept: still caps capture-speed scaling)
 export const MINE_NODE_MIN_SEP   = 360;  // min spacing between nodes / from bases
 
 // ─── Bot decision-making ──────────────────────────────────────────────────────
@@ -299,6 +336,9 @@ export const MINE_NODE_MIN_SEP   = 360;  // min spacing between nodes / from bas
  * So ~10 defenders can be expected to hold against ~13 attackers.
  */
 export const DEFENDER_EDGE = DEFENDER_ATK_MULT / DEFENDER_DMG_TAKEN;
+// What one boss guard is worth in attackers, from its stance alone. The
+// BOSS_SOLDIER_* multipliers are on top of this.
+export const BOSS_DEFENDER_EDGE = BOSS_DEFENDER_ATK_MULT / BOSS_DEFENDER_DMG_TAKEN;
 
 /** Enemies this close to a base are pressing it right now. */
 export const BOT_THREAT_RADIUS = 420;
@@ -355,14 +395,20 @@ export const BOT_RESTLESS_AFTER = 45;     // think-ticks (~90s) before impatienc
 export const BOT_RESTLESS_DECAY = 0.025;  // edge requirement lost per tick beyond that
 
 /**
- * The floor must sit BELOW 1/DEFENDER_EDGE (~0.75), and that is not a rounding
- * choice — it is the difference between a game and a staring contest.
+ * The floor must sit BELOW 1/DEFENDER_EDGE, and that is not a rounding choice —
+ * it is the difference between a game and a staring contest.
  *
  * Population is capped, so eight even bots all plateau at a similar army size.
  * If a bot always demanded more attackers than the enemy has defenders, no
  * even matchup could ever be attacked and every match would run to the timer.
  * Below this line a patient bot eventually commits at roughly equal numbers —
  * a real gamble, which is the correct behaviour when waiting is also losing.
+ *
+ * DEFENDER_EDGE is now 1.0 (the defender's advantage was removed), so the
+ * ceiling this must stay under is 1.0 rather than the ~0.75 it was written
+ * against. It stays at 0.55 regardless: walls are still priced into the
+ * requirement, so a patient bot needs to fall below parity on bodies before a
+ * fortified base looks takeable.
  */
 export const BOT_RESTLESS_FLOOR = 0.55;
 
@@ -373,8 +419,63 @@ export const BOT_RESTLESS_FLOOR = 0.55;
  * never marches on your home while you are busy — so committing to one risks
  * only the squads you send. Raise it and bots fight over the middle; lower it
  * and they ignore the objective entirely.
+ *
+ * Was 1.2, which turned out to be most of the score. The boss and base scores
+ * are otherwise on the same scale (roughly -1 to +2), so a flat +1.2 meant a
+ * boss beat a rival base at almost any force ratio, and measurement bore that
+ * out: bosses drew 190 commitments to bases' 219 while mining nodes were
+ * ignored entirely. A boss should be a strong pull, not a default.
  */
-export const BOT_BOSS_APPEAL = 1.2;
+export const BOT_BOSS_APPEAL = 0.8;
+
+/**
+ * How many mining nodes a bot tries to hold before it stops chasing more.
+ *
+ * There are MINE_NODE_COUNT (9) on the map and each is worth only +1 gold/sec,
+ * so hoovering up every one is a poor use of an army that could be ending
+ * somebody. Three is enough to matter economically while leaving most of the
+ * bot's force free to fight — and it stops two bots spending an entire match
+ * shoving each other off nodes while a weaker player is left alone.
+ */
+export const BOT_MINE_TARGET = 3;
+
+/**
+ * How far from home a bot will send its LAST free squad to sit on a node.
+ *
+ * With two or more squads free, any node is fair game. Down to one, the node
+ * has to be close enough that recalling it costs little — a squad sent to the
+ * far side of the map is, in practice, not available for defence however
+ * recallable it is on paper. Roughly the distance between neighbouring seats on
+ * the spawn ring, so "a node in my own quarter of the map".
+ */
+export const BOT_MINE_SOLO_RADIUS = 900;
+
+/**
+ * The largest share of a bot's squads that may be tied up on mining nodes.
+ *
+ * A bot may always claim one node regardless (see _canSpareForMining), so this
+ * only bites once it has enough squads for the fraction to matter. At 0.5 half
+ * the army is always free to fight, which is what stops mining mode turning
+ * into eight bots quietly farming while nobody attacks anybody.
+ */
+export const BOT_MINE_MAX_SHARE = 0.5;
+
+/**
+ * How much wall HP one attacker is reckoned to be worth when a bot decides
+ * whether an assault can succeed. Only used for that judgement — it changes no
+ * combat maths.
+ *
+ * Calibrated against the boss, whose difficulty was already tuned by
+ * simulation: its ring is BOSS_WALL_CELLS × BOSS_WALL_CELL_HP = 62,400 HP, and
+ * the force that actually cracked it in testing was three to four squads
+ * (45–60 soldiers). 62,400 / 52 ≈ 1200.
+ *
+ * A player's ring of ten DEFENDER_HP cells is 80,000 HP, so ~67 bodies — four
+ * or five squads. That is the point: a walled base should demand a committed
+ * assault, and a bot that cannot raise one should go and do something else
+ * rather than feed single squads into it.
+ */
+export const WALL_BODY_HP = 1200;
 
 // ─── Seats ────────────────────────────────────────────────────────────────────
 // A match has exactly SEAT_COUNT mother bases. Every seat is identical: it

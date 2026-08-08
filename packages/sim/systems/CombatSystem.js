@@ -3,13 +3,27 @@ import { Projectile } from '../entities.js';
 import {
   ATTACK_RANGE, TURRET_DEFS, STRUCTURE_DMG_MULT, WALL_DMG_MULT, SOLDIER_RADIUS,
   WALL_CELL_SIZE, WALL_ATTACKERS_MAX,
-  CONQUEST_GOLD_LUMP, CONQUEST_XP, KILL_XP, BOSS_GOLD_REWARD, BOSS_XP_REWARD,
+  CONQUEST_GOLD_LUMP, CONQUEST_XP, KILL_XP,
+  BOSS_GOLD_REWARD, BOSS_GOLD_REWARD_RICH, BOSS_REWARD_RICH_AT,
+  BOSS_REWARD_SCALED, BOSS_XP_REWARD,
   EATABLE_DEFS, WILDLING_XP_BOUNTY, BASE_DEFENSE_RADIUS, DEFENDER_ATK_MULT, DEFENDER_DMG_TAKEN,
+  BOSS_DEFENDER_ATK_MULT, BOSS_DEFENDER_DMG_TAKEN,
 } from '../constants.js';
 import { isStructureTarget, targetRadius } from './GroupSystem.js';
-import { outerBlockingLayer, nearestCell, damageCell, repairWalls } from '../walls.js';
+import {
+  outerBlockingLayer, outermostLayer, blockingLayerFor, nearestCell,
+  damageCell, repairWalls, solidAtAngle,
+} from '../walls.js';
+import { goldRate } from './ProgressionSystem.js';
 
 const STRIKE_CD = 500; // ms baseline between strikes (2/sec)
+
+/**
+ * How close to its objective an enemy has to be for an assaulting squad to
+ * bother with it. Anything further away is somebody else's problem — the squad
+ * is on its way somewhere and will not be distracted.
+ */
+const OBJECTIVE_GUARD_R2 = (BASE_DEFENSE_RADIUS + 90) ** 2;
 
 /** Attacking an enemy structure gives up your own spawn protection. */
 function forfeitProtection(player) {
@@ -55,7 +69,16 @@ export class CombatSystem {
       // Bosses have walls too. This used to check `state.bases` only, so a
       // boss's ring was never a valid target — attackers stood outside it
       // unable to reach anything at all, and the boss was unkillable.
-      const layer = base.walls ? outerBlockingLayer(base) : null;
+      //
+      // outermostLayer, not outerBlockingLayer: a ring with one cell missing is
+      // still a wall standing in the way, and soldiers pressed against it must
+      // be able to keep chewing through it rather than going idle.
+      // Whichever ring is genuinely in the way — which after a breach is the
+      // NEXT one in, not the outermost. A squad standing at an open breach or
+      // already past every ring goes for the target itself.
+      const cen = this._groupCentroid(state, g);
+      const layer = base.walls ? blockingLayerFor(base, cen) : null;
+
       if (layer) this._assaultWall(state, g, base, layer, dtMs, now);
       else       this._assaultBase(state, g, base, dtMs, now);
     }
@@ -182,6 +205,18 @@ export class CombatSystem {
       if (sol.hp <= 0) continue;
       if (sol.atkCd > 0) { sol.atkCd -= dtMs; continue; }
 
+      // A squad committed to storming a structure has one job. It engages the
+      // defenders AT its objective and ignores everything it passes on the way
+      // — otherwise any stray soldier could stop an assault in its tracks, and
+      // a defender could stall an attack indefinitely by feeding single
+      // soldiers into its path.
+      let objective = null;
+      const myGroup = state.groups.get(sol.groupId);
+      if (myGroup?.status === 'attacking') {
+        const target = state.resolve(myGroup.targetId);
+        if (target && isStructureTarget(state, target)) objective = target.position;
+      }
+
       // 1. nearest hostile within attack range (enemy soldier or wildling)
       //
       // This used to scan every soldier on the map for every soldier on the
@@ -192,6 +227,8 @@ export class CombatSystem {
       state.grid.forEachNear(px, py, ATTACK_RANGE + SOLDIER_RADIUS, (e) => {
         if (e === sol || e.hp <= 0) return;
         if (!state.areEnemies(sol.ownerId, e.ownerId)) return;
+        // Storming a base: only fight what is actually guarding it.
+        if (objective && dist2(e.position, objective) > OBJECTIVE_GUARD_R2) return;
         const dx = e.position.x - px, dy = e.position.y - py;
         const d2 = dx * dx + dy * dy;
         if (d2 <= effS2 && d2 < bestD2) { bestD2 = d2; best = e; kind = 'soldier'; }
@@ -285,8 +322,14 @@ export class CombatSystem {
 
     // DEFENDER'S ADVANTAGE (stance-based): a soldier in a DEFENDING squad hits
     // harder; a soldier being hit while in a DEFENDING squad takes less.
+    //
+    // For players both multipliers are now 1.0 — see constants.js. Only the
+    // boss still gets an edge, so that removing the player-side advantage did
+    // not quietly make bosses easier to kill.
     const ag = state.groups.get(attacker.groupId);
-    if (ag && ag.status === 'defending') dmg *= DEFENDER_ATK_MULT;
+    if (ag && ag.status === 'defending') {
+      dmg *= attacker.ownerId === 'boss' ? BOSS_DEFENDER_ATK_MULT : DEFENDER_ATK_MULT;
+    }
 
     const targetIsBase = state.bases.has(target.id);
     if (siege) dmg *= STRUCTURE_DMG_MULT;                          // siege bonus vs structures
@@ -297,7 +340,9 @@ export class CombatSystem {
       const tp = state.players.get(target.ownerId);
       dmg /= 1 + (tp?.buffs?.def ?? 0) * 0.10;
       const tg = state.groups.get(target.groupId);
-      if (tg && tg.status === 'defending') dmg *= DEFENDER_DMG_TAKEN;
+      if (tg && tg.status === 'defending') {
+        dmg *= target.ownerId === 'boss' ? BOSS_DEFENDER_DMG_TAKEN : DEFENDER_DMG_TAKEN;
+      }
     }
 
     const before = target.hp;
@@ -378,19 +423,13 @@ export class CombatSystem {
 
   // ── Boss ─────────────────────────────────────────────────────────────────────
   _bossSwipe(state, dtMs) {
-    // A boss lashes out at anything that gets right up against it. It never
-    // chases — this only reaches attackers who have already committed to
-    // standing on top of it.
-    for (const [, boss] of state.bosses) {
-      if (boss.atkCd > 0) continue;
-      const hit = state.grid.nearest(
-        boss.position.x, boss.position.y, 55,
-        (s) => s.hp > 0 && s.ownerId !== 'boss',
-      );
-      if (!hit) continue;
-      hit.hp = Math.max(0, hit.hp - boss.damage);
-      boss.atkCd = 800;
-    }
+    // A boss does NO damage of its own. It is a fortified position, not a
+    // monster: its wall and its guards do the fighting, and the structure
+    // itself just sits there being hard to remove.
+    //
+    // It used to swipe at anything nearby, which meant an attacking squad was
+    // whittled down one soldier at a time by something they could not fight
+    // back against, on top of the guards.
   }
 
   // ── Cleanup ────────────────────────────────────────────────────────────────
@@ -441,9 +480,15 @@ export class CombatSystem {
       // amount. That bound is what makes it safe.
       const killer = state.players.get(boss.lastAttackerId);
       if (killer?.alive) {
-        killer.base.bossBonus = (killer.base.bossBonus ?? 0) + BOSS_GOLD_REWARD;
+        // Optionally taper the reward for whoever is already rich, so the same
+        // objective is worth relatively more to someone still climbing.
+        const reward = (BOSS_REWARD_SCALED && goldRate(killer.base) >= BOSS_REWARD_RICH_AT)
+          ? BOSS_GOLD_REWARD_RICH
+          : BOSS_GOLD_REWARD;
+
+        killer.base.bossBonus = (killer.base.bossBonus ?? 0) + reward;
         killer.pendingXP += BOSS_XP_REWARD;
-        state.notify(`🏆 Boss slain! +${BOSS_GOLD_REWARD} gold/sec for the rest of the match`, 'success', killer.id);
+        state.notify(`🏆 Boss slain! +${reward} gold/sec for the rest of the match`, 'success', killer.id);
       }
 
       // Everyone who helped gets XP — bosses are meant to draw a crowd.

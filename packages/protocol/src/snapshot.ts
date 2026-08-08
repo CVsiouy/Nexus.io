@@ -287,8 +287,19 @@ function writeQueue(w: Writer, q: any[]) {
   }
 }
 
-const seatOf = (snap: any, ownerId: string) =>
-  snap.players.find((p: any) => p.id === ownerId)?.seat ?? 0;
+/**
+ * Seat index for an owner, packed into 4 bits.
+ *
+ * BOSS_SEAT is a reserved value for the boss's guards. Without it they fell
+ * through to `?? 0` and arrived on the client as seat 0's soldiers — so a
+ * boss's garrison appeared to belong to whoever happened to be player one.
+ */
+export const BOSS_SEAT = 15;
+
+const seatOf = (snap: any, ownerId: string) => {
+  if (ownerId === 'boss') return BOSS_SEAT;
+  return snap.players.find((p: any) => p.id === ownerId)?.seat ?? 0;
+};
 
 // ── Decode ───────────────────────────────────────────────────────────────────
 
@@ -422,7 +433,7 @@ export function decodeSnapshot(buffer: ArrayBuffer | Uint8Array, prev?: any): an
     for (let m = 0; m < memberCount; m++) memberIds.push(r.u16());
     groups.push({
       id: gid,
-      ownerId: seatToId.get(seat) ?? `p${seat}`,
+      ownerId: seat === BOSS_SEAT ? 'boss' : (seatToId.get(seat) ?? `p${seat}`),
       memberIds,
       status: STATUSES[st & 0x0f] ?? 'idle',
       locked: !!(st & 16),
@@ -442,9 +453,10 @@ export function decodeSnapshot(buffer: ArrayBuffer | Uint8Array, prev?: any): an
     const { x, y } = r.xy();
     const hpPct = r.u8() / 255;
     const type = UNIT_TYPES[(packed >> 4) & 0x0f] ?? 'grunt';
+    const seat = packed & 0x0f;
     soldiers.push({
       id: sid, type,
-      ownerId: seatToId.get(packed & 0x0f) ?? `p${packed & 0x0f}`,
+      ownerId: seat === BOSS_SEAT ? 'boss' : (seatToId.get(seat) ?? `p${seat}`),
       x, y,
       hp: hpPct, maxHp: 1,      // stored as a fraction; the renderer only uses the ratio
       facing: -Math.PI / 2,

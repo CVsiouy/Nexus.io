@@ -5,7 +5,10 @@ import {
   BASE_RADIUS, BOSS_RADIUS, SOLDIER_RADIUS, WORLD_SIZE,
   ATTACK_RANGE, WALL_CELL_SIZE, BASE_DEFENSE_RADIUS,
 } from '../constants.js';
-import { outerBlockingLayer, outermostLayer, nearestCell, crossesWall, pushOutside } from '../walls.js';
+import {
+  outerBlockingLayer, outermostLayer, blockingLayerFor, nearestCell, nearestGap,
+  crossesWall, pushOutside, solidAtAngle,
+} from '../walls.js';
 
 /** True if the target is a "structure" (a base or the boss) that gets surrounded. */
 export function isStructureTarget(state, target) {
@@ -104,13 +107,33 @@ export class GroupSystem {
           // whole wedge focus-fire one defender and made attackers unbeatable);
           // the defending formation comes out to meet us and both fight fair.
           let ax = target.position.x, ay = target.position.y;
-          if (state.bases.has(target.id)) {
-            const layer = outerBlockingLayer(target);
-            if (layer) {
-              const near = nearestCell(target, layer, this._centroid(members)); // breach wall first
+
+          // Walls, on a base OR a boss. Two behaviours, and which one applies
+          // depends on whether there is already a way in:
+          //
+          //   • ring intact  → head for the nearest cell and break it
+          //   • ring breached → head for the BREACH and pour through it
+          //
+          // Without the second case a squad would stand pressed against an
+          // already-broken wall doing nothing at all: the old code only looked
+          // for a COMPLETE ring, so one destroyed cell made the assault target
+          // vanish while the surviving cells still physically blocked the way.
+          // Which ring is actually in our way right now? Not necessarily the
+          // outermost one — after breaching an outer ring the NEXT ring in
+          // becomes the obstacle, and the squad has to deal with that one.
+          const cen = this._centroid(members);
+          const layer = target.walls ? blockingLayerFor(target, cen) : null;
+
+          if (layer) {
+            const gap = nearestGap(target, layer, cen);
+            if (gap) {
+              ax = gap.pos.x; ay = gap.pos.y;              // there is a way in — take it
+            } else {
+              const near = nearestCell(target, layer, cen); // no way in — make one
               if (near) { ax = near.pos.x; ay = near.pos.y; }
             }
           }
+          // Otherwise the path ahead is clear — press straight on to the target.
           g.anchor = { x: ax, y: ay };
         }
       } else if (g.status === 'defending') {

@@ -352,7 +352,10 @@
       position: fixed; inset: 0; z-index: 100;
       display: flex; flex-direction: column;
       align-items: center; justify-content: center;
-      padding: 24px;
+      /* Scales with the viewport instead of a fixed 24px, so the menu still
+         fits on a laptop at 100% zoom rather than running off the bottom. */
+      padding: clamp(10px, 2.5vh, 28px) clamp(12px, 3vw, 32px);
+      gap: 0;
       /* Darkest in the middle where the text sits, clearing toward the edges
          so the game is still visible around it. */
       background:
@@ -365,18 +368,20 @@
     /* The HUD is always in the DOM; keep it out of sight until play starts. */
     body:not(.playing) #hud { display: none; }
 
+    /* Everything below sizes off BOTH width and height. A menu that fits a wide
+       short laptop screen is the harder case, so vh appears in most clamps. */
     #intro .game-title {
       font-family: 'Rajdhani', sans-serif;
-      font-size: clamp(52px, 9vw, 88px); font-weight: 700;
-      color: #0077cc; letter-spacing: 5px;
-      line-height: 1; margin-bottom: 4px;
+      font-size: clamp(34px, min(8vw, 9vh), 80px); font-weight: 700;
+      color: #0077cc; letter-spacing: clamp(2px, 0.6vw, 5px);
+      line-height: 1; margin-bottom: 2px;
       text-shadow: 0 2px 0 rgba(255,255,255,0.9), 0 6px 30px rgba(0,119,204,0.25);
     }
     #intro .game-title span { color: #2c3e50; }
     #intro .tagline {
-      font-size: 12px; color: #5b7185;
-      letter-spacing: 5px; text-transform: uppercase;
-      margin-bottom: 30px; font-weight: 600;
+      font-size: clamp(10px, 1.4vh, 12px); color: #5b7185;
+      letter-spacing: clamp(2px, 0.5vw, 5px); text-transform: uppercase;
+      margin-bottom: clamp(12px, 3vh, 30px); font-weight: 600;
       text-shadow: 0 1px 0 rgba(255,255,255,0.8);
     }
 
@@ -418,7 +423,7 @@
     .menu-note {
       font-family: 'Rajdhani', sans-serif;
       font-size: 11px; letter-spacing: 2px; text-transform: uppercase;
-      color: #7b8fa1; margin: 22px 0 8px;
+      color: #7b8fa1; margin: clamp(10px, 2.5vh, 22px) 0 clamp(5px, 1vh, 8px);
       display: flex; align-items: center; gap: 12px; width: min(420px, 80vw);
     }
     .menu-note::before, .menu-note::after {
@@ -427,14 +432,14 @@
 
     /* ── Three pillars, not a wall of text ── */
     .pillars {
-      display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
-      gap: 12px; margin-top: 34px;
-      width: min(760px, 92vw); pointer-events: none;
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: clamp(8px, 1.4vh, 12px); margin-top: clamp(14px, 3.5vh, 34px);
+      width: min(940px, 94vw); pointer-events: none;
     }
     .pillar {
       background: rgba(255,255,255,0.86);
       border: 1px solid rgba(0,0,0,0.07);
-      border-radius: 14px; padding: 15px 18px;
+      border-radius: 14px; padding: clamp(10px, 1.6vh, 15px) clamp(12px, 1.4vw, 18px);
       box-shadow: 0 3px 14px rgba(0,0,0,0.07);
     }
     .pillar h3 {
@@ -447,10 +452,46 @@
 
     /* ── Compact controls ── */
     .keys {
-      display: flex; flex-wrap: wrap; gap: 7px 16px; justify-content: center;
-      margin-top: 20px; width: min(760px, 92vw); pointer-events: none;
+      display: flex; flex-wrap: wrap; gap: 6px 14px; justify-content: center;
+      margin-top: clamp(10px, 2vh, 20px); width: min(880px, 94vw); pointer-events: none;
     }
     .keys .k { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: #46596b; }
+    .keys .k em { font-style: normal; color: #8fa0b0; }
+
+    /* ─── Fitting real screens ───────────────────────────────────────────────
+       The awkward case is a laptop: wide but short. Below ~820px of height the
+       menu has to shed detail rather than scroll, because a menu you must
+       scroll to find the Play button on is a broken menu. */
+    @media (max-height: 820px) {
+      .pillar p { font-size: 11.5px; line-height: 1.5; }
+      .pillar h3 { font-size: 12px; }
+    }
+    @media (max-height: 700px) {
+      /* Drop the explanations, keep the headings: a newcomer still sees the
+         three ideas, and the live match behind is doing the real explaining. */
+      .pillar p { display: none; }
+      .pillar { padding: 8px 12px; }
+      .keys { font-size: 10.5px; }
+    }
+    @media (max-height: 580px) {
+      .pillars { display: none; }     /* Play button always stays visible */
+      .keys { display: none; }
+    }
+
+    /* Phones and narrow windows. */
+    @media (max-width: 560px) {
+      .play-row { flex-direction: column; align-items: stretch; width: min(320px, 86vw); }
+      .play-row .name-input { width: 100%; }
+      .btn-play { width: 100%; padding: 15px 20px; }
+      .practice-row { flex-direction: column; align-items: stretch; width: min(320px, 86vw); }
+      .btn-practice { width: 100%; }
+      .pillars { grid-template-columns: 1fr; }
+    }
+
+    /* The canvas always fills the window; PixiJS is resized to match in
+       Game.js's resize handler, and the camera zoom is recomputed from the
+       window width so the whole map still fits at any size. */
+    #app, #app canvas { display: block; width: 100%; height: 100%; }
     .keys kbd {
       background: rgba(255,255,255,0.95); border: 1px solid #b0bec5;
       border-bottom-width: 2px; border-radius: 5px; padding: 2px 7px;
@@ -564,18 +605,22 @@
     #spectate-tag.vis { display: block; }
 
     /* ─── Final standings ─── */
+    /* Eight rows is the single biggest block on the game-over screen, so its
+       row height and gaps track viewport height rather than being fixed. */
     #go-standings {
-      display: none; flex-direction: column; gap: 3px;
-      margin: 22px auto 6px; width: min(460px, 82vw);
-      pointer-events: none;
+      display: none; flex-direction: column; gap: clamp(2px, 0.4vh, 3px);
+      margin: clamp(8px, 2.4vh, 22px) auto clamp(2px, 0.8vh, 6px);
+      width: min(460px, 82vw);
+      pointer-events: none; flex-shrink: 0;
     }
     #go-standings.vis { display: flex; }
     .go-row {
       display: grid; grid-template-columns: 30px 14px 1fr auto;
       align-items: center; gap: 10px;
       background: rgba(255,255,255,0.75); border: 1px solid #e2e8f0;
-      border-radius: 8px; padding: 7px 13px;
-      font-family: 'Rajdhani', sans-serif; font-size: 15px; font-weight: 600;
+      border-radius: 8px; padding: clamp(3px, 0.9vh, 7px) 13px;
+      font-family: 'Rajdhani', sans-serif;
+      font-size: clamp(12px, 1.9vh, 15px); font-weight: 600;
       color: #334;
     }
     .go-row.me { background: rgba(0,119,204,0.12); border-color: #0077cc; }
@@ -586,34 +631,41 @@
 
     /* ─── Playtest feedback ─── */
     #feedback {
-      display: none; flex-direction: column; align-items: center; gap: 10px;
-      margin: 20px auto 4px; pointer-events: all;
-      font-family: 'Rajdhani', sans-serif;
+      display: none; flex-direction: column; align-items: center;
+      gap: clamp(4px, 1.2vh, 10px);
+      margin: clamp(6px, 2.2vh, 20px) auto 4px; pointer-events: all;
+      font-family: 'Rajdhani', sans-serif; flex-shrink: 0;
     }
     #feedback.vis { display: flex; }
     #feedback.sent .fb-q, #feedback.sent .fb-stars,
     #feedback.sent .fb-comment, #feedback.sent .fb-send { display: none; }
     #feedback.sent .fb-thanks { display: block; }
-    .fb-q { font-size: 15px; font-weight: 600; letter-spacing: 1px; color: #64748b; }
-    .fb-stars { display: flex; gap: 8px; }
+    .fb-q { font-size: clamp(12px, 1.9vh, 15px); font-weight: 600; letter-spacing: 1px; color: #64748b; }
+    .fb-stars { display: flex; gap: clamp(5px, 1vh, 8px); }
     .fb-star {
-      width: 42px; height: 42px; border-radius: 50%;
+      width: clamp(30px, 5.2vh, 42px); height: clamp(30px, 5.2vh, 42px);
+      border-radius: 50%;
       border: 2px solid #d5dde6; background: #fff; cursor: pointer;
-      font-family: 'Rajdhani', sans-serif; font-size: 16px; font-weight: 700;
+      font-family: 'Rajdhani', sans-serif;
+      font-size: clamp(13px, 2vh, 16px); font-weight: 700;
       color: #64748b; transition: all .15s ease;
     }
     .fb-star:hover { border-color: #0077cc; color: #0077cc; transform: translateY(-2px); }
     .fb-star.sel { background: #0077cc; border-color: #0077cc; color: #fff; }
     .fb-comment {
-      width: min(360px, 80vw); padding: 10px 16px; border-radius: 22px;
+      width: min(360px, 80vw); padding: clamp(6px, 1.3vh, 10px) 16px;
+      border-radius: 22px;
       border: 2px solid #d5dde6; background: #fff; outline: none;
-      font-family: 'Rajdhani', sans-serif; font-size: 14px; color: #223;
+      font-family: 'Rajdhani', sans-serif;
+      font-size: clamp(12px, 1.8vh, 14px); color: #223;
     }
     .fb-comment:focus { border-color: #0077cc; }
     .fb-send {
-      padding: 9px 26px; border-radius: 22px; border: none; cursor: pointer;
+      padding: clamp(6px, 1.2vh, 9px) 26px; border-radius: 22px;
+      border: none; cursor: pointer;
       background: #16a34a; color: #fff;
-      font-family: 'Rajdhani', sans-serif; font-size: 13px; font-weight: 700;
+      font-family: 'Rajdhani', sans-serif;
+      font-size: clamp(11px, 1.7vh, 13px); font-weight: 700;
       letter-spacing: 1.5px;
     }
     .fb-send:hover { background: #1cc45c; }
@@ -717,29 +769,53 @@
     .menu-action.danger:hover { background: #dc2626; color: #fff; }
 
     /* ─── Game Over ─── */
+    /*
+     * This screen has to survive a full 8-player standings table PLUS the
+     * feedback block on a 768px-tall laptop at 100% zoom, which is roughly
+     * 640px of usable height — less than the content wants.
+     *
+     * So it does NOT use justify-content: center. Centring a flex column that
+     * overflows clips it at BOTH ends, and the clipped-off top is unreachable
+     * because scrolling cannot go above the container's start. Instead the
+     * first child takes margin-top:auto and the last takes margin-bottom:auto:
+     * when there is spare room the auto margins split it evenly and the block
+     * sits centred, and when there is not they collapse to zero and the whole
+     * thing scrolls normally from the top. Same result when it fits, no
+     * unreachable content when it doesn't.
+     */
     #gameover {
       position: fixed; inset: 0;
       background: rgba(244,244,244,0.95);
       backdrop-filter: blur(8px);
       display: none; flex-direction: column;
-      align-items: center; justify-content: center;
-      z-index: 95; gap: 16px;
+      align-items: center; justify-content: flex-start;
+      z-index: 95; gap: clamp(6px, 1.6vh, 16px);
+      overflow-y: auto; overscroll-behavior: contain;
+      padding: clamp(12px, 3vh, 32px) 16px;
     }
     #gameover.vis { display: flex; }
+    #go-title { margin-top: auto; }      /* top half of the centring */
+    #gameover .go-actions { margin-bottom: auto; }  /* bottom half */
     #go-title {
       font-family: 'Rajdhani', sans-serif;
-      font-size: 56px; font-weight: 700; letter-spacing: 4px;
+      font-size: clamp(30px, 6.4vh, 56px); font-weight: 700;
+      letter-spacing: 4px; line-height: 1.1; text-align: center;
     }
     #go-title.win  { color: #16a34a; }
     #go-title.lose { color: #dc2626; }
-    #go-sub { font-size: 14px; color: #7b8fa1; }
+    #go-sub { font-size: clamp(12px, 1.8vh, 14px); color: #7b8fa1; text-align: center; }
+    /* The two buttons wrap rather than overflow on a narrow window. The 12px
+       lift lives here, not on #restart-btn, so both buttons share a baseline. */
+    #gameover .go-actions {
+      flex-wrap: wrap; justify-content: center;
+      margin-top: clamp(4px, 1.4vh, 12px);
+    }
     #restart-btn {
-      margin-top: 12px;
       background: linear-gradient(135deg, #0077cc, #004fa3);
       color: white; border: none;
-      padding: 13px 40px; border-radius: 50px;
+      padding: clamp(8px, 1.7vh, 13px) clamp(24px, 6vw, 40px); border-radius: 50px;
       font-family: 'Rajdhani', sans-serif;
-      font-size: 17px; font-weight: 700;
+      font-size: clamp(13px, 2.2vh, 17px); font-weight: 700;
       letter-spacing: 2px; cursor: pointer; pointer-events: all;
       box-shadow: 0 4px 16px rgba(0,119,204,0.35);
       transition: all .2s;
@@ -754,10 +830,38 @@
     #gold-row .g-rate { margin-left: auto; font-size: 11px; color: #16a34a; font-weight: 700; font-family: 'Rajdhani', sans-serif; }
 
     /* ─── Group / squad panel (top-left, clear of the expanded Buffs panel) ─── */
+    /*
+     * Squad panel. Scrollable, and it takes some care to actually be so:
+     *
+     *  1. #hud is pointer-events:none so the map stays clickable through the
+     *     HUD, and only individual controls opt back in. The panel never did,
+     *     so a wheel over its body fell straight through to the canvas — whose
+     *     handler calls preventDefault() — and the list simply would not move
+     *     however much content it had. `pointer-events: auto` is what makes the
+     *     wheel land on the panel at all.
+     *  2. overscroll-behavior stops a scroll that reaches the end of the list
+     *     from chaining onward and yanking the game view.
+     *  3. The height is bounded by the space actually available, not a bare
+     *     58vh: it starts 176px down and the notification stack occupies the
+     *     same left column from 120px off the bottom, so on a short window the
+     *     old value ran the list straight through the notifications and off the
+     *     screen, taking its scrollbar with it.
+     */
     #group-panel {
       position: absolute; top: 176px; left: 14px;
-      padding: 10px 10px; min-width: 92px; max-height: 58vh; overflow-y: auto;
+      padding: 10px 10px; min-width: 92px;
+      max-height: min(58vh, calc(100vh - 176px - 150px));
+      overflow-y: auto; overscroll-behavior: contain;
+      pointer-events: auto;
+      scrollbar-width: thin; scrollbar-color: rgba(0,0,0,0.25) transparent;
     }
+    /* A visible, slim scrollbar — the list gives no other hint that it runs on. */
+    #group-panel::-webkit-scrollbar { width: 6px; }
+    #group-panel::-webkit-scrollbar-track { background: transparent; }
+    #group-panel::-webkit-scrollbar-thumb {
+      background: rgba(0,0,0,0.22); border-radius: 3px;
+    }
+    #group-panel::-webkit-scrollbar-thumb:hover { background: rgba(0,0,0,0.38); }
     /* Minimap (Map) panel hidden for now. */
     #minimap-wrap { display: none !important; }
     #group-panel .gp-title {
@@ -915,31 +1019,45 @@
         <span class="handle-title">Controls</span>
         <span class="handle-hint">H</span>
       </div>
+      <!--
+        Kept in step with the real bindings: InputSystem.js (mouse, WASD/arrows,
+        Space, Tab, F, Esc, X/C/V, 1-4), Game.js (R, Esc-to-pause) and main.js
+        (data-hotkey panels: Q build, B buffs, H this list). If you add or move a
+        binding, edit it here in the same commit — a controls list that lies is
+        worse than none.
+      -->
       <div class="panel-body">
         <div class="ctrl-row">
           <span class="key-badge"><kbd>Click squad</kbd> Select</span>
           <span class="key-badge"><kbd>Drag box</kbd> Select many</span>
-          <span class="key-badge"><kbd>Click enemy</kbd> All attack</span>
+          <span class="key-badge"><kbd>Click ground</kbd> Move there</span>
+          <span class="key-badge"><kbd>Click enemy</kbd> All selected attack</span>
           <span class="key-badge"><kbd>R-click</kbd> Unselect</span>
         </div>
         <div class="ctrl-row">
-          <span class="key-badge"><kbd>WASD</kbd> Pan map</span>
+          <span class="key-badge"><kbd>WASD</kbd> / <kbd>Arrows</kbd> Pan map</span>
           <span class="key-badge"><kbd>Space</kbd> Snap to base</span>
           <span class="key-badge"><kbd>Tab</kbd> Cycle squads</span>
-          <span class="key-badge"><kbd>R</kbd> Release garrison</span>
+          <span class="key-badge"><kbd>Esc</kbd> Unselect / pause</span>
         </div>
         <div class="ctrl-row">
+          <span class="key-badge"><kbd>R</kbd> Release garrison</span>
           <span class="key-badge"><kbd>F</kbd> Defend base</span>
           <span class="key-badge"><kbd>X</kbd> Split</span>
           <span class="key-badge"><kbd>C</kbd> Merge</span>
           <span class="key-badge"><kbd>V</kbd> Balance</span>
+        </div>
+        <div class="ctrl-row">
+          <span class="key-badge"><kbd>Q</kbd> Build panel</span>
           <span class="key-badge"><kbd>B</kbd> Buffs</span>
+          <span class="key-badge"><kbd>H</kbd> This list</span>
         </div>
         <div class="ctrl-row">
           <span class="key-badge"><kbd>1 2 3 4</kbd> Ping attack / defend / help / retreat</span>
         </div>
-        <!-- Team mode only, and previously documented nowhere at all. -->
+        <!-- Mode-specific. Neither was documented anywhere at all. -->
         <div class="ctrl-row">
+          <span class="key-badge"><kbd>Click node</kbd> Hold it for gold (mining mode)</span>
           <span class="key-badge"><kbd>Click ally base</kbd> Donate a soldier (team mode)</span>
         </div>
       </div>

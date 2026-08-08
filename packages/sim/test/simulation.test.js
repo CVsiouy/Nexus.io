@@ -33,16 +33,19 @@ test('builds 8 identical seats, all AI-driven until a human claims one', () => {
 
 test('every seat starts equal — nobody gets a free head start', () => {
   // Previously one hardcoded seat was "the player" and got a starting grunt the
-  // others did not. Harmless alone; unfair the moment eight humans are seated.
+  // others did not. Now nobody does: a lone soldier loitering outside the base
+  // could only ever be picked off, and the first real troops come out of the
+  // garrison together as a formation.
   const sim = new Simulation({ mode: 'ffa' });
-  const counts = new Map();
-  for (const [, s] of sim.state.soldiers) counts.set(s.ownerId, (counts.get(s.ownerId) ?? 0) + 1);
 
-  assert.equal(counts.size, 8, 'every seat should have a starting soldier');
-  for (const [id, n] of counts) assert.equal(n, 1, `${id} started with ${n} soldiers, expected 1`);
+  assert.equal(sim.state.soldiers.size, 0, 'nobody should start with soldiers on the map');
+  assert.equal(sim.state.groups.size, 0, 'nobody should start with a squad');
 
   const gold = [...sim.state.players.values()].map(p => p.base.gold);
   assert.equal(new Set(gold).size, 1, 'all seats should start with the same gold');
+
+  const hp = [...sim.state.players.values()].map(p => p.base.hp);
+  assert.equal(new Set(hp).size, 1, 'all seats should start with the same HP');
 });
 
 // ── Seats: claiming, releasing, AI takeover ──────────────────────────────────
@@ -130,11 +133,11 @@ test('a claimed seat is no longer driven by the AI', () => {
   // The AI keeps its seats busy building. A human seat must build NOTHING it
   // wasn't told to — otherwise your base would spend your gold on units you
   // never ordered.
-  assert.ok(aBot.base.soldierQueue.length > 0 || sim.state.soldierCount(aBot.id) > 1,
+  assert.ok(aBot.base.soldierQueue.length > 0 || aBot.base.garrison > 0 || sim.state.soldierCount(aBot.id) > 0,
     'the AI should have been building on its own seats');
   assert.equal(me.base.soldierQueue.length, 0,
     'the AI queued units on a human-controlled seat');
-  assert.equal(sim.state.soldierCount(me.id), 1,
+  assert.equal(sim.state.soldierCount(me.id), 0,
     'a human seat gained soldiers it never ordered');
 });
 
@@ -293,7 +296,10 @@ test('queueing a unit adds to the right queue and respects unlocks', () => {
 
 test('move orders are clamped inside the map', () => {
   const sim = new Simulation({ logger: quiet });
-  run(sim, 90);
+  // Nobody starts with soldiers now, so field a squad first.
+  sim.state.players.get('p0').base.garrison = 15;
+  sim.applyCommand('p0', { t: 'release' });
+  run(sim, 5);
 
   const mine = [...sim.state.groups.values()].filter(g => g.ownerId === 'p0');
   assert.ok(mine.length, 'player should have a squad');
@@ -309,7 +315,8 @@ test('move orders are clamped inside the map', () => {
 
 test('donate is refused outside team mode', () => {
   const sim = new Simulation({ mode: 'ffa', logger: quiet });
-  run(sim, 30);
+  sim.state.players.get('p0').base.garrison = 15;
+  sim.applyCommand('p0', { t: 'release' });
   const g = [...sim.state.groups.values()].find(x => x.ownerId === 'p0');
   assert.equal(sim.applyCommand('p0', { t: 'donate', g: g.id, to: 'p1' }).ok, false);
 });

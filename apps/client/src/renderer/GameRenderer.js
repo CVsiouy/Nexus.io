@@ -11,6 +11,9 @@ const GRID_SIZE  = 50;
 const BG_COLOR   = 0xf4f4f4;
 const GRID_COLOR = 0xd8d8d8;
 
+/** Boss guards: neutral gold, matching the boss and its wall. */
+const BOSS_GUARD_COLOR = 0xd4a017;
+
 /**
  * GameRenderer — draws the world under a tight, non-roaming camera.
  * Layers: grid → bases → turrets → boss → soldiers → projectiles → fx.
@@ -505,15 +508,21 @@ export class GameRenderer {
     const g = this._units;
     for (const [, sol] of state.soldiers) {
       if (sol.hp <= 0) continue;
-      const player = state.players.get(sol.ownerId);
-      if (!player) continue;
+      // Boss guards have no player entry — they belong to the objective, not to
+      // anyone. Without this they were skipped entirely and fought invisibly.
+      const isBossGuard = sol.ownerId === 'boss';
+      const player = isBossGuard ? null : state.players.get(sol.ownerId);
+      if (!player && !isBossGuard) continue;
+
+      const ownerColor = isBossGuard ? BOSS_GUARD_COLOR : player.color;
 
       const { x, y } = sol.position;
       const facing = sol.facing;
       const sizes = { grunt: 7, sentinel: 10, saboteur: 5, vanguard: 11 };
-      const sz = sizes[sol.type] ?? 7;
-      const fill   = sol.type === 'saboteur' ? 0x1a1a1a : player.color;
-      const border = sol.type === 'saboteur' ? player.color : _darken(player.color, 0.5);
+      // Guards are drawn a touch larger — they really are tougher than a grunt.
+      const sz = (sizes[sol.type] ?? 7) + (isBossGuard ? 2 : 0);
+      const fill   = sol.type === 'saboteur' ? 0x1a1a1a : ownerColor;
+      const border = sol.type === 'saboteur' ? ownerColor : _darken(ownerColor, 0.5);
 
       // Selection ring if this soldier's group is selected (player only).
       // Selection now lives on the client — it is not part of the shared game

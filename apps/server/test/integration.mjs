@@ -113,8 +113,17 @@ alice.room.send(MSG.COMMAND, { t: 'queue', unit: '../../etc/passwd', n: 1 });
 await wait(400);
 ok(alice.rejected.length > 0, 'a hostile unit name was rejected, not passed through');
 
-// The decisive one: Bob tries to command a squad he does not own.
-const anySquad = alice.snapshots.at(-1).groups.find(g => g.ownerId === aliceId);
+// Bob tries to command a squad he does not own.
+//
+// Opportunistic: nobody starts with soldiers now, and waiting the ~80s it takes
+// a bot to fill and field its first garrison would dominate this test. The
+// guarantee itself is covered directly against the simulation by
+// "you cannot command another player's squads" in packages/sim/test/botAI.test.js.
+// This only confirms it still holds over the wire when a squad happens to exist.
+const anySquad = alice.last?.groups.find(g => g.ownerId !== bobId && g.ownerId !== 'boss');
+if (!anySquad) {
+  console.log('  – skipped: no squad existed yet to test squad-ownership over the wire');
+}
 if (anySquad) {
   bob.rejected.length = 0;
   const anchorBefore = { x: anySquad.anchorX, y: anySquad.anchorY };

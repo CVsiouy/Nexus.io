@@ -2,7 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Simulation, TICK_MS } from '../Simulation.js';
 import { AISystem } from '../systems/AISystem.js';
-import { GROUP_MAX_SIZE, BOT_THINK_RATE, DEFENDER_EDGE } from '../constants.js';
+import {
+  GROUP_MAX_SIZE, BOT_THINK_RATE,
+  DEFENDER_EDGE, DEFENDER_ATK_MULT, DEFENDER_DMG_TAKEN,
+  BOSS_DEFENDER_EDGE, BOSS_DEFENDER_ATK_MULT, BOSS_DEFENDER_DMG_TAKEN,
+} from '../constants.js';
 
 const quiet = { error: () => {}, warn: () => {}, log: () => {} };
 
@@ -193,12 +197,25 @@ test('bots do not read hidden enemy garrisons', () => {
 
 // ── The defender advantage ───────────────────────────────────────────────────
 
-test('DEFENDER_EDGE is derived from the stance bonuses, not hardcoded', () => {
-  // If someone retunes the stance multipliers, the bots' arithmetic must follow
-  // automatically rather than silently going stale.
-  assert.ok(DEFENDER_EDGE > 1, 'defending should be worth more than attacking');
-  assert.ok(DEFENDER_EDGE > 1.2 && DEFENDER_EDGE < 1.6,
-    `DEFENDER_EDGE is ${DEFENDER_EDGE.toFixed(3)} — check it still matches the constants`);
+test('players get no defender bonus; the boss keeps its own', () => {
+  // The stance advantage was removed for PLAYERS: an equal defending force used
+  // to beat an attacking one automatically, which made sitting still the
+  // correct play and stopped matches resolving. Attacking is now settled by
+  // numbers, positioning and walls — things a player can actually see and act
+  // on — rather than a hidden multiplier.
+  assert.equal(DEFENDER_ATK_MULT, 1, 'players must not hit harder for defending');
+  assert.equal(DEFENDER_DMG_TAKEN, 1, 'players must not take less for defending');
+  assert.equal(DEFENDER_EDGE, 1, 'a defender is worth exactly one attacker');
+
+  // The boss's guards are a separate, deliberately unfair objective, and
+  // removing the player bonus must not have quietly nerfed them.
+  assert.ok(BOSS_DEFENDER_EDGE > 1.2 && BOSS_DEFENDER_EDGE < 1.6,
+    `BOSS_DEFENDER_EDGE is ${BOSS_DEFENDER_EDGE.toFixed(3)} — the boss should still favour defence`);
+
+  // Both are still DERIVED, so retuning either pair keeps the bots' arithmetic
+  // in step instead of silently going stale.
+  assert.equal(DEFENDER_EDGE, DEFENDER_ATK_MULT / DEFENDER_DMG_TAKEN);
+  assert.equal(BOSS_DEFENDER_EDGE, BOSS_DEFENDER_ATK_MULT / BOSS_DEFENDER_DMG_TAKEN);
 });
 
 /**

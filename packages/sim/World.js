@@ -46,9 +46,11 @@ export function buildWorld(state, mode = 'ffa') {
       ? TEAM_TINTS[team][tintIdx[team]++ % TEAM_TINTS[team].length]
       : SEAT_COLORS[i % SEAT_COLORS.length];
 
-    const id   = `p${i}`;
-    const base = _spawnBase(state, id, i, color, p.x, p.y, tiers[i % tiers.length], team);
-    _spawnStartingGrunt(state, id, base);
+    const id = `p${i}`;
+    _spawnBase(state, id, i, color, p.x, p.y, tiers[i % tiers.length], team);
+    // No starting soldier. Everyone begins with just their base; the first
+    // troops come out of the garrison as a proper formation, so nobody starts
+    // with a lone grunt loitering outside that can only be picked off.
   }
 
   // Mining mode scatters capturable gold nodes. No centre eatables/wildlings in

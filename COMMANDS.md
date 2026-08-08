@@ -115,7 +115,7 @@ docker compose ps
 
 **Shortcut:** `./nexus.sh test` — runs all three suites below in order.
 
-### Simulation + client (56 tests, server not needed)
+### Simulation + client (91 tests, server not needed)
 
 **Normally:** `npm test`
 
@@ -138,7 +138,7 @@ docker compose exec server npx tsx --test test/protocol.test.ts test/snapshot.te
 These run *inside the already-running server container*, which is why they need
 `./nexus.sh dev` first — that container has the TypeScript runner.
 
-### Live: two real clients in one match (27 checks)
+### Live: two real clients in one match (26 checks)
 
 ```bash
 docker compose exec server npx tsx test/integration.mjs
