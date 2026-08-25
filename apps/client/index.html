@@ -119,14 +119,28 @@
       --bottom-safe: calc(var(--gut-b) + var(--dock-h));
     }
 
-    /* ─── Shared panel style ─── */
+    /*
+     * ─── Shared panel style ───
+     *
+     * Semi-transparent on EVERY screen, not just phones. These panels sit on
+     * top of the battlefield, and at the old 0.88 opacity each one was a solid
+     * white card punched out of the map — you lost whatever was underneath.
+     * At 0.42 with a blur behind it, the map still reads through and the HUD
+     * stops competing with the thing it is describing.
+     *
+     * The blur is what makes this work rather than just looking washed out: it
+     * keeps text legible over busy ground without needing an opaque backing.
+     */
     .panel {
-      background: rgba(255,255,255,0.88);
-      border: 1.5px solid rgba(0,0,0,0.10);
+      background: rgba(255,255,255,0.42);
+      border: 1.5px solid rgba(255,255,255,0.5);
       border-radius: 12px;
-      backdrop-filter: blur(8px);
-      box-shadow: 0 2px 12px rgba(0,0,0,0.12), 0 1px 3px rgba(0,0,0,0.08);
+      backdrop-filter: blur(7px);
+      box-shadow: 0 2px 10px rgba(0,0,0,0.08);
     }
+    /* Small text over a live map needs a little help that a solid card used to
+       provide for free. */
+    .panel { text-shadow: 0 1px 2px rgba(255,255,255,0.85); }
 
     /*
      * ─── Flat HUD (phones) ───
@@ -297,10 +311,28 @@
     .lb-entry.lb-gap { margin-top: 4px; border-top: 1px dashed rgba(0,0,0,0.14); padding-top: 3px; }
 
     /* ─── Minimap (bottom-right) ─── */
+    /*
+     * Top-right, stacked under the leaderboard — NOT bottom-right, which is
+     * where #level-bar lives. The two used to share `bottom:14 right:14`
+     * exactly, a collision that was only ever hidden by the minimap being
+     * switched off.
+     */
     #minimap-wrap {
-      position: absolute; bottom: 14px; right: 14px;
+      position: absolute; top: 70px; right: 14px; bottom: auto;
       padding: 10px;
     }
+    /*
+     * Only one of the two top-right panels is ever on screen.
+     *
+     * They are already mutually exclusive in JS (data-exclusive="corner-tr"),
+     * so at most one is OPEN — but an open panel expands downward over the
+     * other one's button, which is exactly the overlap being complained about.
+     * Hiding the sibling outright while one is open makes the overlap
+     * impossible rather than merely unlikely, and costs nothing: you cannot
+     * usefully press a button that is underneath a panel anyway.
+     */
+    #hud:has(#leaderboard:not(.collapsed)) #minimap-wrap,
+    #hud:has(#minimap-wrap:not(.collapsed)) #leaderboard { display: none; }
     /* Size and radius live on `#minimap-wrap canvas` further down — the more
        specific selector was silently winning anyway. */
     #minimap { border: 1.5px solid rgba(0,0,0,0.12); display: block; }
@@ -346,6 +378,40 @@
     #build-panel .u-name { font-size: 9px; }
     #build-panel .u-cost { font-size: 7px; }
     #build-panel .panel-handle { margin-bottom: 4px; }
+    /* ── Semi-transparent everywhere ──────────────────────────────────────
+       Matches the look of the mobile build buttons, which is the reference:
+       a light translucent tile, no hard border, map visible through it. */
+    .unit-btn, .econ-btn, .turret-btn, .cmd-btn {
+      background: rgba(255,255,255,0.42) !important;
+      border-color: rgba(255,255,255,0.55);
+    }
+    .unit-btn.active, .econ-btn.active {
+      background: rgba(234,245,255,0.72) !important; border-color: #0077cc;
+    }
+    .unit-btn.locked, .econ-btn.locked { background: rgba(241,244,247,0.5) !important; }
+    .collapsible.collapsed { background: rgba(255,255,255,0.42); }
+    .collapsible.collapsed:hover { background: rgba(255,255,255,0.62); }
+    #build-panel { background: none; border: none; box-shadow: none; backdrop-filter: none; }
+
+    /*
+     * Cancel-the-queue button.
+     *
+     * Sits opposite the count badge so the two never collide, and only exists
+     * while something is actually queued — a permanent ✕ on an empty button
+     * invites a tap that does nothing.
+     */
+    .unit-btn { position: relative; }
+    .u-cancel {
+      position: absolute; top: -7px; left: -7px; z-index: 3;
+      width: 20px; height: 20px; border-radius: 50%;
+      display: none; align-items: center; justify-content: center;
+      padding: 0; line-height: 1;
+      border: 1.5px solid #fff; background: #64748b; color: #fff;
+      font-size: 13px; font-weight: 700; cursor: pointer;
+      pointer-events: auto; box-shadow: 0 1px 4px rgba(0,0,0,0.25);
+    }
+    .unit-btn.active .u-cancel { display: flex; }
+    .u-cancel:hover { background: #dc2626; }
     .unit-btn {
       position: relative;
       display: flex; flex-direction: column; align-items: center;
@@ -401,7 +467,19 @@
      * else). A panel that spends its whole life showing "+0% +0% +0%" is a
      * corner of the screen wasted on a control you cannot use.
      */
-    #skill-panel:not(.has-pts) { display: none; }
+    /*
+     * !important is load-bearing here, not laziness.
+     *
+     * `#skill-panel:not(.has-pts)` and the phone-tier `#skill-panel.collapsed`
+     * have IDENTICAL specificity (one id, one class each), so the later rule
+     * in the file won — and that is the tier rule setting `display: flex` for
+     * the 44px corner button. The result was a Buffs button sitting on screen
+     * at 0 points on phones, doing nothing when tapped.
+     *
+     * "Hidden because there is nothing to spend" has to beat every layout rule,
+     * so it is marked as such rather than relying on source order.
+     */
+    #skill-panel:not(.has-pts) { display: none !important; }
     @keyframes pulsePt { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
     .sk-row {
       display: flex; justify-content: space-between; align-items: center;
@@ -983,6 +1061,16 @@
     /* Minimap is live again — it is closed by default and only draws while
        open, so it costs nothing when collapsed. */
     #minimap-wrap .panel-body { position: relative; }
+    /*
+     * Once the map is OPEN, the handle is dead weight: a 🗺️ icon and the word
+     * "Map" sitting above a picture that is obviously a map, eating a row of
+     * height that could be map instead. The ✕ in the corner closes it, so the
+     * handle has no job left either.
+     *
+     * It stays visible while collapsed, because then it IS the button.
+     */
+    #minimap-wrap:not(.collapsed) .panel-handle { display: none; }
+    #minimap-wrap:not(.collapsed) { padding: 6px; }
     #minimap-wrap canvas {
       display: block; width: 150px; height: 150px;
       border-radius: 8px; background: rgba(226,232,240,0.6);
@@ -1384,7 +1472,32 @@
       #minimap-wrap.collapsed .panel-handle { justify-content: center; gap: 0; }
 
       /* Open, they float over the map instead of pushing anything around. */
-      #skill-panel:not(.collapsed) { max-width: 200px; }
+      /*
+       * Buffs as a horizontal strip, not a stacked list.
+       *
+       * Three rows plus a header is ~150px tall. On a 393px-tall landscape
+       * phone that is 38% of the screen for a panel you interact with two or
+       * three times a match. As a single row of three chips it is ~44px, still
+       * a legal touch target, and it stops covering the battlefield.
+       */
+      #skill-panel:not(.collapsed) {
+        max-width: none;
+        left: var(--gut-l); right: auto;
+        display: flex; flex-direction: row; align-items: center; gap: 6px;
+        padding: 4px !important;
+      }
+      #skill-panel:not(.collapsed) .panel-handle { margin: 0 2px 0 0; min-height: 0; }
+      #skill-panel:not(.collapsed) .handle-title { display: none; }
+      #skill-panel:not(.collapsed) .panel-body { display: flex; flex-direction: row; gap: 5px; }
+      #skill-panel:not(.collapsed) .sk-row {
+        flex-direction: column; gap: 0; margin: 0;
+        min-width: 52px; min-height: 44px; padding: 3px 6px;
+        justify-content: center; text-align: center;
+      }
+      /* The word is redundant next to the icon at this size. */
+      #skill-panel:not(.collapsed) .sk-name { font-size: 14px; }
+      #skill-panel:not(.collapsed) .sk-name-txt { display: none; }
+      #skill-panel:not(.collapsed) .sk-lvl { font-size: 11px; }
       #leaderboard:not(.collapsed) { min-width: 168px; max-height: 66dvh; overflow-y: auto; }
 
       /* ── Top-right: leaderboard button, minimap toggle beneath it ─────── */
@@ -1557,8 +1670,10 @@
       .cmd-btn { width: 54px; height: 54px; }
       #cmd-defend { width: 64px; height: 64px; }
       #joystick { width: 92px; height: 92px; }
-      #minimap-wrap canvas { width: 84px; height: 84px; }
-      #leaderboard { top: calc(var(--gut-t) + 98px); }
+      /* The OPEN map, not the button — it still has to be readable, so it only
+         shrinks a little on a very short screen. The leaderboard keeps its
+         top-right anchor; the map sits under it, as everywhere else. */
+      #minimap-wrap canvas { width: 124px; height: 124px; }
       .group-entry .g-count { font-size: 19px; }
     }
     @media (pointer: coarse) and (orientation: portrait) and (max-width: 360px) {
@@ -1629,7 +1744,7 @@
     </div>
 
     <!-- Leaderboard (top-right) -->
-    <div id="leaderboard" class="panel collapsible collapsed">
+    <div id="leaderboard" class="panel collapsible collapsed" data-exclusive="corner-tr">
       <div class="panel-handle">
         <span class="handle-icon">🏆</span>
         <span class="handle-title">Leaderboard</span>
@@ -1649,7 +1764,7 @@
 
       Tap-to-jump is deliberately NOT wired yet.
     -->
-    <div id="minimap-wrap" class="panel collapsible collapsed">
+    <div id="minimap-wrap" class="panel collapsible collapsed" data-exclusive="corner-tr">
       <div class="panel-handle">
         <span class="handle-icon">🗺️</span>
         <span class="handle-title">Map</span>
@@ -1797,12 +1912,17 @@
       <div class="panel-body">
       <div class="bp-section-lbl">Soldiers</div>
       <div class="unit-btn active" data-unit="grunt" data-lv="1" title="Your soldier. Build a squad and send it to war.">
+        <!-- Cancels the whole queued run. Right-click removes one at a time on
+             desktop; touch has no right-click, so without this a mis-tap that
+             queued twenty soldiers could not be undone at all. -->
+        <button class="u-cancel" type="button" aria-label="Cancel queued soldiers" title="Cancel everything queued here">×</button>
         <span class="u-badge"></span>
         <span class="u-icon">🔺</span>
         <span class="u-name">Soldier</span>
         <span class="u-cost">25g · 1p</span>
       </div>
       <div class="unit-btn" data-unit="sentinel" data-lv="8" title="Defender — a static wall cell. Stacks into layers around your base. Unlocks at Level 8.">
+        <button class="u-cancel" type="button" aria-label="Cancel queued defenders" title="Cancel everything queued here">×</button>
         <span class="u-badge"></span>
         <span class="u-icon">🧱</span>
         <span class="u-name">Defender</span>
@@ -1845,9 +1965,9 @@
         <span class="handle-hint">B</span>
       </div>
       <div class="panel-body">
-        <div class="sk-row" data-buff="atk"><span class="sk-name">⚔️ Attack</span><span class="sk-lvl" id="sk-atk">+0%</span></div>
-        <div class="sk-row" data-buff="def"><span class="sk-name">🛡️ Defense</span><span class="sk-lvl" id="sk-def">+0%</span></div>
-        <div class="sk-row" data-buff="spd"><span class="sk-name">💨 Speed</span><span class="sk-lvl" id="sk-spd">+0%</span></div>
+        <div class="sk-row" data-buff="atk"><span class="sk-name">⚔️<span class="sk-name-txt"> Attack</span></span><span class="sk-lvl" id="sk-atk">+0%</span></div>
+        <div class="sk-row" data-buff="def"><span class="sk-name">🛡️<span class="sk-name-txt"> Defense</span></span><span class="sk-lvl" id="sk-def">+0%</span></div>
+        <div class="sk-row" data-buff="spd"><span class="sk-name">💨<span class="sk-name-txt"> Speed</span></span><span class="sk-lvl" id="sk-spd">+0%</span></div>
       </div>
     </div>
 

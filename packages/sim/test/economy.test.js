@@ -149,3 +149,48 @@ test('the economy stays finite over a long match', () => {
   }
   assert.equal(sim.errorCount, 0);
 });
+
+/**
+ * Cancelling a queued build.
+ *
+ * Right-click has always removed one at a time, which is fine with a mouse and
+ * unusable on a phone: there is no right-click, and undoing a mis-tap that
+ * queued eighteen soldiers one tap at a time is not a real option. A negative
+ * `n` larger than 1 now removes that many in a single command, so the touch
+ * cancel button does not have to fire eighteen messages at the server.
+ */
+test('a queued run can be cancelled in one command, without disturbing the rest', () => {
+  const sim = new Simulation({ logger: quiet });
+  const base = sim.state.players.get('p0').base;
+  base.gold = 99_999;
+  base.unlocked.add('sentinel');
+
+  const grunts = () => base.soldierQueue.reduce((t, e) => t + (e.type === 'grunt' ? e.count : 0), 0);
+  const walls  = () => base.wallQueue.reduce((t, e) => t + e.count, 0);
+
+  for (let i = 0; i < 18; i++) sim.applyCommand('p0', { t: 'queue', unit: 'grunt', n: 1 });
+  for (let i = 0; i < 3;  i++) sim.applyCommand('p0', { t: 'queue', unit: 'sentinel', n: 1 });
+  assert.equal(grunts(), 18);
+
+  // Right-click behaviour must be untouched: exactly one.
+  sim.applyCommand('p0', { t: 'queue', unit: 'grunt', n: -1 });
+  assert.equal(grunts(), 17, 'n:-1 must still remove exactly one');
+
+  // The cancel button: clear the lot, in one message.
+  const res = sim.applyCommand('p0', { t: 'queue', unit: 'grunt', n: -17 });
+  assert.ok(res.ok, `bulk cancel was refused: ${res.reason}`);
+  assert.equal(grunts(), 0);
+
+  // Soldiers and walls are separate queues; cancelling one must not touch the
+  // other, or a player clearing a mis-queued army would lose their walls too.
+  assert.equal(walls(), 3, 'cancelling soldiers disturbed the wall queue');
+
+  // Over-removing is a clamp, not an error — the client sends the count it
+  // last saw, which may be stale by a tick.
+  for (let i = 0; i < 3; i++) sim.applyCommand('p0', { t: 'queue', unit: 'grunt', n: 1 });
+  assert.ok(sim.applyCommand('p0', { t: 'queue', unit: 'grunt', n: -99 }).ok);
+  assert.equal(grunts(), 0);
+
+  // But cancelling nothing is still refused rather than silently "succeeding".
+  assert.ok(!sim.applyCommand('p0', { t: 'queue', unit: 'grunt', n: -1 }).ok);
+});

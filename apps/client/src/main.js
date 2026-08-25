@@ -12,13 +12,39 @@ let game = null;
 function initCollapsiblePanels() {
   const panels = [...document.querySelectorAll('.collapsible')];
 
+  /**
+   * Open one panel in a group and the others in it close.
+   *
+   * The leaderboard and the map both live in the top-right corner and both
+   * expand downward, so with two open at once they simply sat on top of each
+   * other — and on a phone the open leaderboard covered the map's own button,
+   * making it unreachable. Grouping them means the corner can only ever hold
+   * one open panel, which removes the overlap by construction rather than by
+   * finding offsets that happen not to collide.
+   */
+  const exclusive = (panel) => {
+    const group = panel.dataset.exclusive;
+    if (!group) return;
+    for (const other of panels) {
+      if (other !== panel && other.dataset.exclusive === group) {
+        other.classList.add('collapsed');
+      }
+    }
+  };
+
+  const toggle = (panel) => {
+    const opening = panel.classList.contains('collapsed');
+    panel.classList.toggle('collapsed');
+    if (opening) exclusive(panel);
+  };
+
   for (const panel of panels) {
     const handle = panel.querySelector('.panel-handle');
     if (handle) {
       handle.addEventListener('click', (e) => {
         // Don't toggle when clicking an interactive control inside the handle
         // (none currently, but future-proof).
-        panel.classList.toggle('collapsed');
+        toggle(panel);
         e.stopPropagation();
       });
     }
@@ -26,14 +52,14 @@ function initCollapsiblePanels() {
 
   // Hotkeys — a key toggles the panel that declares it.
   window.addEventListener('keydown', (e) => {
-    // MUST come first. These hotkeys are plain letters (H, Q, B) and they call
+    // MUST come first. These hotkeys are plain letters (H, B) and they call
     // preventDefault, so without this guard those characters simply cannot be
     // typed anywhere on the page — you could not put an "h" in your name.
     if (isTypingInto(e)) return;
 
     for (const panel of panels) {
       if (panel.dataset.hotkey && panel.dataset.hotkey === e.code) {
-        panel.classList.toggle('collapsed');
+        toggle(panel);
         e.preventDefault();
         break;
       }

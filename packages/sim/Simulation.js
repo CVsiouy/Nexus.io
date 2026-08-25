@@ -300,15 +300,22 @@ export class Simulation {
     // soldiers and walls build in parallel rather than blocking each other.
     const q = cmd.unit === 'sentinel' ? base.wallQueue : base.soldierQueue;
 
-    if (cmd.n === -1) {
-      for (let i = q.length - 1; i >= 0; i--) {
-        if (q[i].type === cmd.unit) {
-          q[i].count--;
-          if (q[i].count <= 0) q.splice(i, 1);
-          return ok();
-        }
+    // Negative n removes from the queue. n === -1 takes one off the end (what
+    // a right-click does); a larger negative removes that many, which is how
+    // the touch UI cancels a whole run in one command rather than firing twenty
+    // separate ones at the server.
+    if (cmd.n < 0) {
+      let want = Math.min(-cmd.n, 999);
+      let removed = 0;
+      for (let i = q.length - 1; i >= 0 && want > 0; i--) {
+        if (q[i].type !== cmd.unit) continue;
+        const take = Math.min(want, q[i].count);
+        q[i].count -= take;
+        want -= take;
+        removed += take;
+        if (q[i].count <= 0) q.splice(i, 1);
       }
-      return fail('nothing queued');
+      return removed > 0 ? ok() : fail('nothing queued');
     }
 
     if (cmd.unit === 'sentinel' && !canAddWall(base) && base.wallQueue.length === 0)

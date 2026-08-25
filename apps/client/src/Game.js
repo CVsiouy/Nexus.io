@@ -234,13 +234,27 @@ export class Game {
       });
     });
 
-    // Build panel — soldiers (left-click queues, right-click removes)
+    // Build panel — soldiers (left-click queues, right-click removes one)
     document.querySelectorAll('#build-panel .unit-btn').forEach(btn => {
       const unit = btn.dataset.unit;
       btn.addEventListener('click', () => this._send({ t: 'queue', unit, n: 1 }));
       btn.addEventListener('contextmenu', e => {
         e.preventDefault();
         this._send({ t: 'queue', unit, n: -1 });
+      });
+
+      // The ✕ cancels the WHOLE queued run in one command.
+      //
+      // Right-click removes one at a time, which is fine with a mouse and
+      // useless on a phone — there is no right-click, and undoing a mis-tap
+      // that queued twenty soldiers one tap at a time is not a real option.
+      // stopPropagation matters: without it the tap would bubble to the parent
+      // button and queue one straight back.
+      btn.querySelector('.u-cancel')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        const queued = Number(btn.querySelector('.u-badge')?.textContent) || 0;
+        if (queued > 0) this._send({ t: 'queue', unit, n: -queued });
       });
     });
 
