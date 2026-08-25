@@ -50,6 +50,7 @@ export class HUDRenderer {
     this._buildBtns  = [...document.querySelectorAll('#build-panel .unit-btn')];
     this._turretBtns = [...document.querySelectorAll('#build-panel .turret-btn')];
     this._bpGold = document.getElementById('bp-gold');
+    this._bpRate = document.getElementById('bp-rate');
     this._bpGarrison = document.getElementById('bp-garrison');
     this._bpPanel = document.getElementById('build-panel');
     this._mineBtn  = document.getElementById('mine-btn');
@@ -216,13 +217,26 @@ export class HUDRenderer {
     const turretQ = {};
     for (const e of base.turretQueue) turretQ[e.type] = (turretQ[e.type] || 0) + 1;
 
-    const hash = base.level + '|' + gold + '|' + pop + '/' + cap + '|' + base.mineLevel + '|' + base.garrison + '|' +
+    // bossBonus is in the hash so a boss kill repaints the rate immediately,
+    // rather than waiting for whatever else happens to change next.
+    const hash = base.level + '|' + gold + '|' + pop + '/' + cap + '|' + base.mineLevel + '|' + base.garrison + '|' + (base.bossBonus ?? 0) + '|' +
       this._buildBtns.map(b => queued[b.dataset.unit] || 0).join(',') + '|' +
       this._turretBtns.map(b => turretQ[b.dataset.turret] || 0).join(',');
     if (hash === this._prevBuildHash) return;
     this._prevBuildHash = hash;
 
     if (this._bpGold) this._bpGold.textContent = gold;
+
+    // Income per second, including the permanent bonus from killing a boss.
+    // Without this on screen a boss kill has no visible effect at all, which
+    // reads as "the reward is broken" when it is working perfectly.
+    if (this._bpRate) {
+      let rate = goldRate(base);
+      if (state.mode === 'mining') {
+        for (const [, n] of state.mineNodes) if (n.ownerId === player.id) rate += n.goldRate;
+      }
+      this._bpRate.textContent = `+${Math.round(rate)}/s`;
+    }
 
     // Garrison: how many soldiers are waiting INSIDE the base. They are drawn
     // nowhere on the map, so without this number "have I got anyone to

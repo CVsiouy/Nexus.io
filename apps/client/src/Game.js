@@ -20,6 +20,7 @@ import { Joystick } from './input/Joystick.js';
 import { readQuality, qualityOpts } from './quality.js';
 import { GameRenderer } from './renderer/GameRenderer.js';
 import { HUDRenderer } from './renderer/HUDRenderer.js';
+import { Tips } from './tips.js';
 
 /**
  * Game — the client.
@@ -111,6 +112,8 @@ export class Game {
     this._selection = new Selection();
     this._renderer = new GameRenderer(this._app);
     this._hud = new HUDRenderer();
+    // Contextual coaching. Advisory only — it never sends a command.
+    this._tips = new Tips((msg, kind) => this.showNotice(msg, kind));
 
     this._input = new InputSystem(
       this._app, this._camera, this._world, this._selection,
@@ -524,6 +527,11 @@ export class Game {
     }
 
     this._renderer.render(world, this._camera, this._selection, this._input.pendingOrders, this._pings);
+    // Teach in context, but never while spectating or in the menu demo.
+    if (this._running && !this._attract && !this._spectating) {
+      this._tips?.update(world, performance.now());
+    }
+
     this._hud.update(world, this._selection, {
       online: this._online,
       ping: this._conn?.ping ?? 0,
@@ -555,6 +563,35 @@ export class Game {
 
   // ── Events from the simulation ─────────────────────────────────────────────
 
+
+  /**
+   * Show a transient message in the bottom-left stack.
+   *
+   * The #notifs element has existed since the first HUD and nothing ever wrote
+   * to it — GameState.notify() was a silent stub, so every message the
+   * simulation tried to send went nowhere.
+   *
+   * Capped and self-expiring: an unbounded notification list on a long match
+   * grows without limit and quietly eats memory and layout time.
+   */
+  showNotice(msg, kind = 'info') {
+    if (!msg) return;
+    const host = document.getElementById('notifs');
+    if (!host) return;
+
+    const el = document.createElement('div');
+    el.className = `notif ${kind}`;
+    el.textContent = msg;
+    host.appendChild(el);
+
+    // Oldest first — the container is column-reverse, so this trims the top.
+    while (host.children.length > 4) host.removeChild(host.firstChild);
+
+    setTimeout(() => {
+      el.classList.add('out');
+      setTimeout(() => el.remove(), 400);
+    }, kind === 'warn' ? 6000 : 4500);
+  }
   _handleEvents(events) {
     for (const ev of events) {
       switch (ev.type) {
@@ -581,6 +618,14 @@ export class Game {
           this._pings.push({ ...ev.data, at: performance.now() });
           break;
         }
+        case 'notify':
+          // One event stream, eight players — so only show what is addressed
+          // to me. 'player' is the sim's generic "whoever is local" target.
+          if (ev.data.targetId === 'player' || ev.data.targetId === this._world.playerId) {
+            this.showNotice(ev.data.msg, ev.data.type);
+          }
+          break;
+
         case 'simError':
           console.error('[sim] tick error at', ev.data.tick, '—', ev.data.message);
           break;

@@ -1,5 +1,6 @@
 import { Game } from './Game.js';
 import { isTypingInto } from './dom.js';
+import { initTutorial } from './tutorial.js';
 import { readQuality, writeQuality } from './quality.js';
 
 let game = null;
@@ -129,6 +130,7 @@ async function main() {
   await game.init();
 
   initCollapsiblePanels();
+  initTutorial();
   initRotateHint();
   initQualityToggle(game);
 

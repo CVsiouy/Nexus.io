@@ -70,7 +70,21 @@ export class GameState {
    * call sites still work; base-under-attack is surfaced by the blinking Base
    * button instead (see HUDRenderer._updateBaseAlert).
    */
-  notify(_msg, _type = 'info', _targetId = 'player') { /* intentionally silent */ }
+  /**
+   * Tell ONE player something worth reading.
+   *
+   * This used to be an intentional no-op stub, which meant every call site was
+   * writing messages into a void — including "🏆 Boss slain! +N gold/sec", so
+   * the single most rewarding moment in the game produced no feedback at all
+   * and looked like the reward had not been granted.
+   *
+   * It is now an ordinary event. `targetId` matters: eight players share one
+   * event stream, so the client must filter or everyone reads everyone else's
+   * private news.
+   */
+  notify(msg, type = 'info', targetId = 'player') {
+    this.event('notify', { msg, type, targetId });
+  }
 
   /** Queue a one-frame event for the renderer (explosions, bloom, etc.) */
   event(type, data) {

@@ -209,6 +209,7 @@
     #build-panel .bp-chip .bp-v { font-size: 14px; font-weight: 700; }
     #build-panel .bp-gold .bp-v { color: #b8860b; }
     #build-panel .bp-gold .bp-g { font-size: 10px; font-weight: 700; color: #b8860b; opacity: .75; }
+    #build-panel .bp-rate { font-size: 10px; font-weight: 700; color: #16a34a; margin-left: 3px; }
     #build-panel .bp-garr { font-size: 11px; }
     #build-panel .bp-garr .bp-v { color: #3d5166; font-size: 13px; }
     /* Garrison is only interesting once somebody is in it. */
@@ -344,20 +345,6 @@
       align-items: flex-start; pointer-events: none;
       max-width: 260px;
     }
-    .notif {
-      padding: 5px 11px; border-radius: 7px;
-      font-size: 11px; font-weight: 500;
-      animation: slideUp .25s ease; white-space: nowrap;
-      box-shadow: 0 1px 6px rgba(0,0,0,0.10);
-      opacity: 0.92;
-    }
-    @keyframes slideUp {
-      from { opacity: 0; transform: translateX(-8px); }
-      to   { opacity: 0.92; transform: translateX(0); }
-    }
-    .notif.info    { background: rgba(255,255,255,0.92); color: #1a2a40; border: 1px solid #cbd5e1; }
-    .notif.success { background: rgba(220,252,231,0.95); color: #166534; border: 1px solid #86efac; }
-    .notif.warning { background: rgba(254,243,199,0.95); color: #92400e; border: 1px solid #fcd34d; }
 
     /* ─── Build panel (bottom-center) ─── */
     #build-panel {
@@ -491,23 +478,6 @@
     .sk-row.spendable:hover { border-color: #0077cc; background: #eaf5ff; }
     .sk-name { font-weight: 500; }
     .sk-lvl { font-family: 'Rajdhani', sans-serif; font-weight: 700; color: #1a2a40; }
-    /* ─── Controls hint bar (bottom-left) ─── */
-    #controls-hint {
-      position: absolute; bottom: 14px; left: 14px;
-      padding: 10px 14px;
-    }
-    .ctrl-row { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 4px; }
-    .ctrl-row:last-child { margin-bottom: 0; }
-    .key-badge {
-      display: inline-flex; align-items: center; gap: 5px;
-      font-size: 10px; color: #3d5166;
-    }
-    .key-badge kbd {
-      background: #e2e8f0; border: 1px solid #b0bec5;
-      border-radius: 4px; padding: 1px 5px;
-      font-size: 9px; font-weight: 700;
-      color: #1a2a40; font-family: 'Inter', monospace;
-    }
 
     /* ─── Menu ───────────────────────────────────────────────────────────────
        A live match plays behind this. The scrim is only just opaque enough to
@@ -1500,12 +1470,8 @@
       #skill-panel:not(.collapsed) .sk-lvl { font-size: 11px; }
       #leaderboard:not(.collapsed) { min-width: 168px; max-height: 66dvh; overflow-y: auto; }
 
-      /* ── Top-right: leaderboard button, minimap toggle beneath it ─────── */
-      #leaderboard { top: var(--gut-t); right: var(--gut-r); }
-      #minimap-wrap {
-        top: calc(var(--gut-t) + 52px); right: var(--gut-r); bottom: auto;
-        padding: 5px;
-      }
+      /* Corner positions for the leaderboard and map live in the shared phone
+         block further down — they sit side by side there, not stacked. */
       /*
        * A real toggle, not a permanently-open square.
        *
@@ -1547,7 +1513,6 @@
       .notif { white-space: normal; font-size: 10px; }
 
       /* ── Shed the rest ───────────────────────────────────────────────── */
-      #controls-hint { display: none !important; }
       /* Level/XP is reference, not a live decision — it lives behind the
          top-left buffs icon rather than taking a corner of its own. */
       #level-bar { display: none; }
@@ -1618,10 +1583,6 @@
       #leaderboard.collapsed .panel-handle,
       #minimap-wrap.collapsed .panel-handle { justify-content: center; gap: 0; }
 
-      #leaderboard { top: calc(var(--gut-t) + 44px); right: var(--gut-r); }
-      #minimap-wrap {
-        top: calc(var(--gut-t) + 96px); right: var(--gut-r); bottom: auto; padding: 5px;
-      }
       #minimap-wrap:not(.collapsed) { padding: 6px; }
       #minimap-wrap canvas { width: 132px; height: 132px; }
       #minimap-close { display: block; }
@@ -1650,7 +1611,6 @@
       #notifs .notif:nth-child(n+3) { display: none; }
       .notif { white-space: normal; font-size: 10px; }
 
-      #controls-hint { display: none !important; }
       #level-bar { display: none; }
 
       /* The ONLY rule that shows the hint lives inside (orientation: portrait),
@@ -1662,6 +1622,94 @@
       }
     }
 
+
+    /* ═══ Phone: lighter still, and tighter ══════════════════════════════
+       The map is the game; the HUD is annotation on top of it. On a phone
+       there is far less screen to share, so everything here is pushed further
+       toward "readable label floating over the battlefield" and away from
+       "card sitting on top of it". Nothing below changes desktop. */
+    @media (pointer: coarse) and (max-width: 1024px) {
+      /* Roughly half the opacity of the desktop panels. The blur is what keeps
+         this legible — without it, 25% white over a grid is unreadable. */
+      .panel,
+      .collapsible.collapsed,
+      .cmd-btn, .unit-btn, .econ-btn, .turret-btn {
+        background: rgba(255,255,255,0.22) !important;
+        border-color: rgba(255,255,255,0.32) !important;
+        backdrop-filter: blur(9px);
+        box-shadow: 0 1px 6px rgba(0,0,0,0.06);
+      }
+      .unit-btn.active, .econ-btn.active {
+        background: rgba(234,245,255,0.42) !important;
+        border-color: rgba(0,119,204,0.75) !important;
+      }
+      /* Text has to carry itself now that the backing is nearly gone. */
+      .panel, .panel *, .cmd-btn, .cmd-btn * {
+        text-shadow:
+          0 1px 2px rgba(255,255,255,0.95),
+          0 0 5px rgba(255,255,255,0.9),
+          0 0 10px rgba(255,255,255,0.7);
+      }
+
+      /* ── Top-right corner: map to the LEFT of the leaderboard ─────────── */
+      /*
+       * Side by side, not stacked. Stacking cost 100px of vertical space in
+       * the corner, and vertical space is the scarce one in landscape. Both
+       * anchor to the top-right so the pair reads as one control cluster.
+       */
+      #leaderboard { top: var(--gut-t); right: var(--gut-r); bottom: auto; left: auto; }
+      #minimap-wrap {
+        top: var(--gut-t); right: calc(var(--gut-r) + 48px); bottom: auto; left: auto;
+        padding: 4px;
+      }
+      /* Open, both hang from the same top-right corner rather than from
+         wherever their button happened to be. */
+      #leaderboard:not(.collapsed),
+      #minimap-wrap:not(.collapsed) {
+        top: var(--gut-t); right: var(--gut-r); left: auto;
+      }
+
+      /* ── Leaderboard: kill the gap under the title ────────────────────── */
+      #leaderboard:not(.collapsed) { padding: 6px 8px !important; min-width: 150px; }
+      /* The handle was spaced for a card. Here it is a caption. */
+      #leaderboard:not(.collapsed) .panel-handle { min-height: 0; margin-bottom: 3px; gap: 4px; }
+      #leaderboard:not(.collapsed) .handle-title { font-size: 8px; letter-spacing: 1px; }
+      #leaderboard:not(.collapsed) .handle-icon { font-size: 11px; }
+      #lb-entries { gap: 1px; }
+      .lb-entry { font-size: 10px; line-height: 1.15; }
+      .lb-rank  { font-size: 8px; width: 10px; }
+      .lb-dot   { width: 6px; height: 6px; }
+      .lb-score { font-size: 9px; }
+
+      /* ── Buffs: a tight row of three, no wasted padding ───────────────── */
+      #skill-panel:not(.collapsed) { padding: 3px !important; gap: 3px; }
+      #skill-panel:not(.collapsed) .panel-handle { margin: 0; gap: 2px; }
+      #skill-panel:not(.collapsed) .panel-body { gap: 3px; }
+      #skill-panel:not(.collapsed) .sk-row {
+        min-width: 44px; min-height: 40px;
+        padding: 2px 4px; gap: 0; margin: 0;
+      }
+      #skill-panel:not(.collapsed) .sk-name { font-size: 13px; }
+      #skill-panel:not(.collapsed) .sk-lvl { font-size: 10px; }
+
+      /* ── Build strip: less air between the numbers and the buttons ────── */
+      #build-panel .bp-stats-line { gap: 6px; margin-bottom: 2px; }
+      #build-panel .bp-chip .bp-v { font-size: 12px; }
+      #build-panel .bp-garr { font-size: 10px; }
+      #build-panel .bp-garr .bp-v { font-size: 11px; }
+      #build-panel .bp-rate { font-size: 9px; }
+    }
+
+    /* Portrait: the corner cluster drops BELOW the status strip.
+       Width is the scarce axis here, and a centred clock plus two 44px buttons
+       does not fit across 375px — at 393px they cleared by half a pixel, which
+       is not clearance, it is luck. */
+    @media (pointer: coarse) and (orientation: portrait) and (max-width: 560px) {
+      #leaderboard, #minimap-wrap,
+      #leaderboard:not(.collapsed), #minimap-wrap:not(.collapsed) {
+        top: calc(var(--gut-t) + 46px);
+      }
+    }
     /* ═══ T4 — very small. Shed rather than shrink. ══════════════════════ */
     @media (pointer: coarse) and (orientation: landscape) and (max-height: 380px) {
       #hud { --rail-w: 48px; }
@@ -1699,8 +1747,105 @@
     }
     .quality-row select:focus { outline: none; border-color: #0077cc; }
     /* Touch rows in the controls list appear only where touch exists. */
-    .ctrl-row.touch-ctrl { display: none; }
-    body.touch .ctrl-row.touch-ctrl { display: flex; }
+
+    /* ─── Tutorial overlay ──────────────────────────────────────────────── */
+    #tutorial {
+      position: fixed; inset: 0; z-index: 110;
+      display: none; align-items: center;
+      justify-content: flex-start; justify-content: safe center;
+      flex-direction: column;
+      background: rgba(20,28,40,0.55);
+      backdrop-filter: blur(4px);
+      overflow-y: auto; overscroll-behavior: contain;
+      padding: max(16px, env(safe-area-inset-top)) max(14px, env(safe-area-inset-right))
+               max(16px, env(safe-area-inset-bottom)) max(14px, env(safe-area-inset-left));
+    }
+    #tutorial.vis { display: flex; }
+    .tut-card {
+      background: #fff; border-radius: 16px;
+      width: min(520px, 100%);
+      box-shadow: 0 12px 40px rgba(0,0,0,0.3);
+      display: flex; flex-direction: column;
+      overflow: hidden;
+      max-height: 100%;
+    }
+    .tut-head {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 10px 14px; border-bottom: 1px solid #eef2f6;
+      font-family: 'Rajdhani', sans-serif; flex-shrink: 0;
+    }
+    .tut-step { font-size: 11px; font-weight: 700; letter-spacing: 2px; color: #94a3b8; }
+    #tut-x {
+      width: 32px; height: 32px; border-radius: 50%;
+      border: none; background: #f1f5f9; color: #64748b;
+      font-size: 14px; cursor: pointer; line-height: 1;
+    }
+    #tut-x:hover { background: #e2e8f0; }
+
+    /* The scrolling part. A tall card on a short screen must not push the
+       navigation off the bottom — that is the only way out of the overlay. */
+    .tut-body { padding: 4px 20px 14px; overflow-y: auto; flex: 1; min-height: 0; }
+    .tut-art { display: block; width: 100%; max-width: 240px; height: auto; margin: 6px auto 2px; }
+    .tut-title {
+      font-family: 'Rajdhani', sans-serif;
+      font-size: clamp(17px, 3.4vh, 21px); font-weight: 700;
+      color: #1a2a40; letter-spacing: .5px; margin: 4px 0 8px; text-align: center;
+    }
+    .tut-body p { font-size: clamp(12px, 2vh, 13.5px); line-height: 1.62; color: #46596b; margin-bottom: 9px; }
+    .tut-body b { color: #1a2a40; font-weight: 600; }
+    .tut-note {
+      background: #f2f9ff; border-left: 3px solid #0077cc;
+      border-radius: 0 8px 8px 0; padding: 8px 11px !important;
+      font-size: 12px !important; color: #33566f !important;
+    }
+    /* The bait card is the one idea worth flagging as special. */
+    #tutorial.highlight .tut-note { background: #fff7ed; border-left-color: #f59e0b; }
+
+    .tut-nav {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 10px; padding: 10px 14px; border-top: 1px solid #eef2f6; flex-shrink: 0;
+    }
+    .tut-btn {
+      padding: 9px 16px; border-radius: 20px; cursor: pointer;
+      border: 1.5px solid #d5dde6; background: #fff; color: #46596b;
+      font-family: 'Rajdhani', sans-serif; font-size: 13px; font-weight: 700;
+      letter-spacing: 1px; min-height: 40px;
+    }
+    .tut-btn.primary { background: #0077cc; border-color: #0077cc; color: #fff; }
+    .tut-btn:disabled { opacity: .4; cursor: default; }
+    .tut-dots { display: flex; gap: 5px; }
+    .tut-dot {
+      width: 7px; height: 7px; border-radius: 50%; background: #d5dde6; cursor: pointer;
+    }
+    .tut-dot.on { background: #0077cc; transform: scale(1.25); }
+
+    .btn-tutorial {
+      margin: 12px auto 0; padding: 10px 22px; border-radius: 22px; cursor: pointer;
+      border: 1.5px solid #d5dde6; background: rgba(255,255,255,0.85); color: #46596b;
+      font-family: 'Rajdhani', sans-serif; font-size: 13px; font-weight: 700;
+      letter-spacing: 1.5px; pointer-events: all; min-height: 42px;
+    }
+    .btn-tutorial:hover { border-color: #0077cc; color: #0077cc; }
+
+    /* ─── Notifications ─────────────────────────────────────────────────── */
+    /* The stack existed from the first HUD and nothing ever wrote to it —
+       GameState.notify() was a silent stub. Now it carries both simulation
+       events (boss kills) and the contextual tips. */
+    .notif {
+      background: rgba(255,255,255,0.92);
+      border-left: 3px solid #0077cc;
+      border-radius: 0 8px 8px 0;
+      padding: 7px 11px; font-size: 11.5px; line-height: 1.4; color: #33566f;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.12);
+      backdrop-filter: blur(6px);
+      max-width: 100%;
+      animation: notifIn .25s ease;
+      transition: opacity .35s ease, transform .35s ease;
+    }
+    .notif.success { border-left-color: #16a34a; }
+    .notif.warn    { border-left-color: #f59e0b; }
+    .notif.out     { opacity: 0; transform: translateX(-12px); }
+    @keyframes notifIn { from { opacity: 0; transform: translateX(-10px); } }
   </style>
 </head>
 <body>
@@ -1775,60 +1920,6 @@
       </div>
     </div>
 
-    <!-- Controls hint (bottom-left) -->
-    <div id="controls-hint" class="panel collapsible collapsed" data-hotkey="KeyH">
-      <div class="panel-handle">
-        <span class="handle-icon">⌨️</span>
-        <span class="handle-title">Controls</span>
-        <span class="handle-hint">H</span>
-      </div>
-      <!--
-        Kept in step with the real bindings: InputSystem.js (mouse, WASD/arrows,
-        Space, Tab, F, Esc, X/C/V, 1-4), Game.js (R, Esc-to-pause) and main.js
-        (data-hotkey panels: Q build, B buffs, H this list). If you add or move a
-        binding, edit it here in the same commit — a controls list that lies is
-        worse than none.
-      -->
-      <div class="panel-body">
-        <div class="ctrl-row">
-          <span class="key-badge"><kbd>Click squad</kbd> Select</span>
-          <span class="key-badge"><kbd>Drag box</kbd> Select many</span>
-          <span class="key-badge"><kbd>Click ground</kbd> Move there</span>
-          <span class="key-badge"><kbd>Click enemy</kbd> All selected attack</span>
-          <span class="key-badge"><kbd>R-click</kbd> Unselect</span>
-        </div>
-        <div class="ctrl-row">
-          <span class="key-badge"><kbd>WASD</kbd> / <kbd>Arrows</kbd> Pan map</span>
-          <span class="key-badge"><kbd>Space</kbd> Snap to base</span>
-          <span class="key-badge"><kbd>Tab</kbd> Cycle squads</span>
-          <span class="key-badge"><kbd>Esc</kbd> Unselect / pause</span>
-        </div>
-        <div class="ctrl-row">
-          <span class="key-badge"><kbd>R</kbd> Release garrison</span>
-          <span class="key-badge"><kbd>F</kbd> Defend base</span>
-        </div>
-        <div class="ctrl-row">
-          <span class="key-badge"><kbd>B</kbd> Buffs</span>
-          <span class="key-badge"><kbd>H</kbd> This list</span>
-        </div>
-        <!-- Mode-specific. Neither was documented anywhere at all. -->
-        <div class="ctrl-row">
-          <span class="key-badge"><kbd>Click node</kbd> Hold it for gold (mining mode)</span>
-          <span class="key-badge"><kbd>Click ally base</kbd> Donate a soldier (team mode)</span>
-        </div>
-        <!-- Touch equivalents. This panel is hidden entirely on a phone (the
-             keys above do not exist there), but a hybrid device can see both. -->
-        <div class="ctrl-row touch-ctrl">
-          <span class="key-badge"><kbd>Tap squad</kbd> Select &middot; tap again to add or remove</span>
-          <span class="key-badge"><kbd>Tap target</kbd> Attack / move / hold node</span>
-        </div>
-        <div class="ctrl-row touch-ctrl">
-          <span class="key-badge"><kbd>Drag map</kbd> Box-select</span>
-          <span class="key-badge"><kbd>Two-finger tap</kbd> Deselect all</span>
-          <span class="key-badge"><kbd>Stick</kbd> Move the camera</span>
-        </div>
-      </div>
-    </div>
     <!--
       Top-centre status row.
 
@@ -1905,7 +1996,13 @@
         until you hit the ceiling, so it shows nothing at all until then.
       -->
       <div class="bp-stats-line">
-        <span class="bp-chip bp-gold"><span class="bp-v" id="bp-gold">0</span><span class="bp-g">g</span></span>
+        <!--
+          The rate matters as much as the total. It used to live only in
+          #level-bar, which is hidden on phones — so income changes were
+          invisible there, and killing a boss (which grants permanent gold/sec)
+          looked like it had done nothing at all.
+        -->
+        <span class="bp-chip bp-gold"><span class="bp-v" id="bp-gold">0</span><span class="bp-g">g</span><span class="bp-rate" id="bp-rate">+0/s</span></span>
         <span class="bp-chip bp-garr" title="Soldiers waiting inside your base. Release them as a squad with R.">🏰&nbsp;<span class="bp-v" id="bp-garrison">0/15</span></span>
         <span class="bp-chip bp-cap" id="bp-cap" title="Population cap reached — no more soldiers until some die or you level up.">POP&nbsp;FULL</span>
       </div>
@@ -2014,6 +2111,7 @@
     </div>
     <div id="conn-status" class="conn-status"></div>
 
+    <button id="open-tutorial" class="btn-tutorial">📖 HOW TO PLAY</button>
     <div class="menu-note">or practise offline against bots</div>
     <div class="practice-row">
       <button id="start-ffa" class="btn-practice">FREE-FOR-ALL</button>
@@ -2138,6 +2236,33 @@
     </div>
   </div>
 
+
+  <!--
+    ─── Tutorial ───────────────────────────────────────────────────────────
+    A paged overlay rather than a scripted mission. The game is a two-minute
+    .io match; a mission that gates you behind objectives fights that format.
+    What a new player actually lacks is the handful of non-obvious ideas below,
+    and those read faster than they play.
+
+    The in-match tips (see tips.js) then reinforce these at the moment each one
+    first becomes true, which is where they actually stick.
+  -->
+  <div id="tutorial">
+    <div class="tut-card">
+      <div class="tut-head">
+        <span class="tut-step"><span id="tut-n">1</span> / <span id="tut-total">8</span></span>
+        <button id="tut-x" aria-label="Close">✕</button>
+      </div>
+
+      <div class="tut-body" id="tut-body"></div>
+
+      <div class="tut-nav">
+        <button id="tut-prev" class="tut-btn">← Back</button>
+        <div class="tut-dots" id="tut-dots"></div>
+        <button id="tut-next" class="tut-btn primary">Next →</button>
+      </div>
+    </div>
+  </div>
   <script type="module" src="/src/main.js"></script>
 </body>
 </html>

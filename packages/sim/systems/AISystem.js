@@ -6,7 +6,8 @@ import {
   BOT_MIN_HOME, BOT_ATTACK_EDGE, BOT_PATIENCE,
   BOT_RESTLESS_AFTER, BOT_RESTLESS_DECAY, BOT_RESTLESS_FLOOR, BOT_BOSS_APPEAL,
   BOT_MINE_TARGET, BOT_MINE_SOLO_RADIUS, BOT_MINE_MAX_SHARE, WALL_BODY_HP, BOSS_DEFENDER_EDGE,
-  BASE_DEFENSE_RADIUS, MAX_WALL_LAYERS,
+  BASE_DEFENSE_RADIUS, MAX_WALL_LAYERS, WORLD_SIZE,
+  BOT_BAIT_RADIUS, BOT_BAIT_SAFETY, BOT_BAIT_ATTRITION, BOT_BAIT_MIN_HP, BOT_BAIT_DISTANCE,
 } from '../constants.js';
 import { attackWithGroup, setDefending, setDefendNode, moveGroup, releaseGarrison } from './GroupSystem.js';
 import { buyMineUpgrade, mineUpgradeCost } from './ProgressionSystem.js';
@@ -177,6 +178,44 @@ export class AISystem {
     const meaningful = Math.max(BOT_THREAT_FLOOR, available * BOT_THREAT_FRACTION);
     const threatened = underAttack || actualThreat >= meaningful;
 
+    // ── Are the attackers ENEMIES OF EACH OTHER? ───────────────────────────
+    //
+    // If two rivals converge on the same base at the same time, they will
+    // fight each other on arrival — and whoever wins arrives at your wall
+    // already mauled. Standing between them means you absorb both armies at
+    // full strength; stepping aside means you fight one weakened survivor.
+    //
+    // This measures the opportunity: how many mutually-hostile factions are
+    // inbound, and how big the largest of them is (which is what you would
+    // actually have to beat after they have collided).
+    const byFaction = new Map();
+    const addThreat = (ownerId, n) => {
+      if (!state.areEnemies(player.id, ownerId)) return;
+      byFaction.set(ownerId, (byFaction.get(ownerId) ?? 0) + n);
+    };
+    state.grid.forEachNear(bx, by, BOT_BAIT_RADIUS, (s) => {
+      if (s.hp <= 0) return;
+      const dx = s.position.x - bx, dy = s.position.y - by;
+      if (dx * dx + dy * dy <= BOT_BAIT_RADIUS * BOT_BAIT_RADIUS) addThreat(s.ownerId, 1);
+    });
+    for (const [, g] of state.groups) {
+      if (g.status !== 'attacking' || g.targetId !== base.id) continue;
+      addThreat(g.ownerId, g.memberIds.length);
+    }
+
+    // Only count factions that are hostile to EACH OTHER, not merely to us.
+    // In team mode two attackers from the same team will not oblige by
+    // fighting, so there is nothing to wait out.
+    const factions = [...byFaction.entries()].filter(([id]) => id !== 'boss');
+    let rivalFactions = 0;
+    for (let i = 0; i < factions.length; i++) {
+      for (let j = i + 1; j < factions.length; j++) {
+        if (state.areEnemies(factions[i][0], factions[j][0])) { rivalFactions = Math.max(rivalFactions, 2); }
+      }
+    }
+    const totalIncoming = factions.reduce((t, [, n]) => t + n, 0);
+    const biggestFaction = factions.reduce((m, [, n]) => Math.max(m, n), 0);
+
     return {
       pressing,
       inbound,
@@ -187,6 +226,9 @@ export class AISystem {
       surplus: available - homeNeed,
       underAttack,
       threatened,
+      rivalFactions,
+      totalIncoming,
+      biggestFaction,
     };
   }
 
@@ -205,6 +247,22 @@ export class AISystem {
 
     if (view.threatened) {
       player._calm = 0;
+
+      // ── Step aside and let them fight each other ────────────────────────
+      //
+      // When two mutually-hostile armies converge on this base at once, meeting
+      // them costs you both armies at full strength. Withdrawing costs you some
+      // base HP, and buys a fight you did not have to be in: they collide, and
+      // whoever survives arrives already mauled.
+      //
+      // Only worth it when standing would actually lose. If the defence can
+      // take them, taking them is better — a base ringed by its own soldiers
+      // cannot be damaged at all, and giving that up for nothing is worse than
+      // any bait.
+      if (this._shouldBait(state, player, view)) {
+        this._withdraw(state, player, view, free);
+        return;
+      }
 
       // Everything not committed comes home and masses at the base. Massing
       // matters: a base ringed by its own soldiers cannot be damaged until they
@@ -235,6 +293,82 @@ export class AISystem {
    * but soldiers held while the base burns are worthless. So the release
    * threshold scales with how much danger the base is actually in.
    */
+
+  /**
+   * Is stepping aside better than standing and fighting?
+   *
+   * Four conditions, all necessary:
+   *
+   *   1. Two or more MUTUALLY hostile armies are inbound. One attacker will not
+   *      fight itself, and two allies from the same team will not fight either.
+   *   2. Standing would lose. If the defence can beat the combined force,
+   *      beating it is strictly better — a base ringed by its own soldiers
+   *      takes no damage at all, and giving that up for nothing is a worse
+   *      trade than any bait.
+   *   3. Stepping aside would WIN. After they collide, the survivor is roughly
+   *      the largest faction minus what the others cost it. If we could not
+   *      beat even that, we are only postponing the loss and losing our army's
+   *      position as well.
+   *   4. The base can survive being hit meanwhile. Baiting with a base about to
+   *      fall is just conceding it.
+   */
+  _shouldBait(state, player, view) {
+    if (view.rivalFactions < 2) return false;
+
+    const base = player.base;
+    const mine = view.available;
+
+    // Would standing lose? Defenders are worth DEFENDER_EDGE attackers each.
+    const canHold = mine * DEFENDER_EDGE >= view.totalIncoming * BOT_BAIT_SAFETY;
+    if (canHold) return false;
+
+    // Would waiting win? A rough survivor estimate: the biggest faction, minus
+    // the damage the rest of them do to it on the way through.
+    const others = view.totalIncoming - view.biggestFaction;
+    const survivor = Math.max(1, view.biggestFaction - others * BOT_BAIT_ATTRITION);
+    if (mine * DEFENDER_EDGE < survivor * BOT_BAIT_SAFETY) return false;
+
+    // Can the base take the beating in the meantime?
+    return (base.hp / base.maxHp) > BOT_BAIT_MIN_HP;
+  }
+
+  /**
+   * Pull the army off the base, directly AWAY from where the attackers are
+   * coming from, and hold there.
+   *
+   * Away-from-the-threat rather than a fixed direction: withdrawing THROUGH an
+   * incoming army is not a withdrawal. The squads stay in `moving` rather than
+   * `defending`, so `_holdHome` picks them up again as soon as the bait
+   * condition lapses and brings them back to the base.
+   */
+  _withdraw(state, player, view, free) {
+    const base = player.base;
+    const bx = base.position.x, by = base.position.y;
+
+    // Centroid of everything hostile near home.
+    let tx = 0, ty = 0, n = 0;
+    state.grid.forEachNear(bx, by, BOT_BAIT_RADIUS, (s) => {
+      if (s.hp <= 0 || !state.areEnemies(player.id, s.ownerId)) return;
+      tx += s.position.x; ty += s.position.y; n++;
+    });
+
+    // Directly opposite the threat; if it is exactly on top of us, any
+    // direction will do rather than dividing by zero.
+    let dx = n ? bx - tx / n : 1;
+    let dy = n ? by - ty / n : 0;
+    const len = Math.hypot(dx, dy) || 1;
+    dx /= len; dy /= len;
+
+    const clampMap = (v) => Math.max(0, Math.min(WORLD_SIZE, v));
+    const rx = clampMap(bx + dx * BOT_BAIT_DISTANCE);
+    const ry = clampMap(by + dy * BOT_BAIT_DISTANCE);
+
+    for (const g of free) moveGroup(g, rx, ry);
+
+    // The garrison stays IN the base. It is the one part of the army that
+    // cannot be caught in the open, and it is what retakes the base afterwards.
+    player._baiting = true;
+  }
   _releaseGarrisonForDefence(state, player, view) {
     const base = player.base;
     if (base.garrison <= 0) return;

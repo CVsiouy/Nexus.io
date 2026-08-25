@@ -461,6 +461,39 @@ export const BOT_MINE_SOLO_RADIUS = 900;
 export const BOT_MINE_MAX_SHARE = 0.5;
 
 /**
+ * ─── The bait: let two rivals fight each other ───────────────────────────────
+ *
+ * When two mutually-hostile armies converge on the same base at once, standing
+ * between them means absorbing both at full strength. Stepping aside costs some
+ * base HP and buys a fight you did not have to be in: they collide, and
+ * whoever survives arrives at your wall already mauled.
+ *
+ * It is a real gamble, not a free win — you trade base damage for a better
+ * fight — so the conditions in AISystem._shouldBait are deliberately strict.
+ */
+
+/** How far out to look for converging armies. Wider than BOT_THREAT_RADIUS:
+ *  the decision has to be made BEFORE they arrive, not once they are on top of
+ *  the base, or there is no time left to withdraw. */
+export const BOT_BAIT_RADIUS = 620;
+
+/** Margin demanded on both the "would standing lose?" and "would waiting win?"
+ *  arithmetic. Above 1 so the bot needs a clear answer, not a coin flip. */
+export const BOT_BAIT_SAFETY = 1.15;
+
+/** How much of the smaller faction's strength is taken out of the larger one
+ *  when they collide. 0.8 assumes an attacker trades at slightly under par —
+ *  they arrive piecemeal and fight without the defender's ground. */
+export const BOT_BAIT_ATTRITION = 0.8;
+
+/** Never bait with a base already this hurt: the plan involves taking hits, and
+ *  a base near death cannot afford any. */
+export const BOT_BAIT_MIN_HP = 0.55;
+
+/** How far to pull back — beyond weapon range, close enough to return quickly. */
+export const BOT_BAIT_DISTANCE = 430;
+
+/**
  * How much wall HP one attacker is reckoned to be worth when a bot decides
  * whether an assault can succeed. Only used for that judgement — it changes no
  * combat maths.
