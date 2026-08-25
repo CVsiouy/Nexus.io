@@ -128,6 +128,32 @@
       box-shadow: 0 2px 12px rgba(0,0,0,0.12), 0 1px 3px rgba(0,0,0,0.08);
     }
 
+    /*
+     * ─── Flat HUD (phones) ───
+     *
+     * The squad rail was the one panel that already looked right on a phone:
+     * no card, no border, just the numbers floating over the map. This is that
+     * treatment, named once instead of being re-typed for each panel.
+     *
+     * The text-shadow is not decoration. Removing the white card puts small
+     * text directly over a light, busy grid, and every colour in this HUD was
+     * chosen against a solid white background. A white halo restores the
+     * contrast those colours assume, without having to re-pick any of them.
+     */
+    .hud-flat {
+      background: none !important;
+      border: none !important;
+      box-shadow: none !important;
+      backdrop-filter: none !important;
+      padding: 0 !important;
+    }
+    .hud-flat, .hud-flat * {
+      text-shadow:
+        0 1px 2px rgba(255,255,255,0.95),
+        0 0 4px rgba(255,255,255,0.85),
+        0 0 8px rgba(255,255,255,0.6);
+    }
+
     /* ─── Collapsible panels ─── */
     /* A collapsible panel keeps its .panel-body hidden when .collapsed, showing
        only a small semi-transparent handle. Click the handle (or press a hotkey)
@@ -156,13 +182,16 @@
       border: 1px solid #d7dee6; border-radius: 4px; padding: 0 4px;
     }
     .collapsible.collapsed:hover { background: rgba(255,255,255,0.72); }
-
-    /* Build panel: expanded = column (handle above the unit row) */
-    #build-panel:not(.collapsed) { flex-direction: column; }
+    /* Build panel is a plain column now: gold line above, buttons below. */
+    #build-panel { flex-direction: column; }
     #build-panel .panel-body { display: flex; align-items: stretch; gap: 6px; }
-    #build-panel .bp-mini { font-family: 'Rajdhani', sans-serif; font-size: 11px; color: #3d5166; }
-    #build-panel .bp-mini .bp-k { color: #7b8fa1; font-weight: 700; letter-spacing: 1px; }
-    #build-panel .bp-mini .bp-v { font-weight: 700; color: #1a2a40; }
+    /* Gold, the one readout that survived the handle deletion. */
+    #build-panel .bp-gold-line {
+      display: flex; align-items: baseline; justify-content: center; gap: 1px;
+      margin-bottom: 3px; font-family: 'Rajdhani', sans-serif; line-height: 1;
+    }
+    #build-panel .bp-gold-line .bp-v { font-size: 15px; font-weight: 700; color: #b8860b; }
+    #build-panel .bp-gold-line .bp-g { font-size: 10px; font-weight: 700; color: #b8860b; opacity: .75; }
     /* Buffs point badge on the handle */
     #skill-panel .sk-pts-badge {
       background: #16a34a; color: #fff; border-radius: 10px;
@@ -219,40 +248,38 @@
       position: absolute; top: 14px; right: 14px;
       min-width: 190px; padding: 12px 14px;
     }
-    #leaderboard .lb-title {
-      font-family: 'Rajdhani', sans-serif;
-      font-size: 10px; font-weight: 700;
-      letter-spacing: 2.5px; text-transform: uppercase;
-      color: #7b8fa1; margin-bottom: 8px;
-    }
-    #lb-entries { display: flex; flex-direction: column; gap: 4px; }
+    /*
+     * Dense enough for ten players without scrolling.
+     *
+     * Was ~25px per row (12px text, 2px+2px padding, 4px gap) = ~290px for ten,
+     * which on a 393px-tall landscape phone is most of the screen. At 11px/1.2
+     * with no vertical padding and a 2px gap the pitch is ~15px, so ten rows
+     * come to ~150px — small enough to leave the map alone, still legible at
+     * arm's length.
+     */
+    #lb-entries { display: flex; flex-direction: column; gap: 2px; }
     .lb-entry {
-      display: flex; align-items: center; gap: 6px;
-      font-size: 12px; color: #3d5166; padding: 2px 0;
+      display: flex; align-items: center; gap: 5px;
+      font-size: 11px; line-height: 1.2; color: #3d5166; padding: 0;
+      font-variant-numeric: tabular-nums;   /* stops ranks jittering as XP ticks */
     }
     .lb-entry.is-player { color: #0077cc; font-weight: 700; }
-    .lb-rank { font-size: 10px; color: #a0aec0; width: 16px; text-align: right; flex-shrink: 0; }
-    .lb-dot  { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; border: 1.5px solid rgba(0,0,0,0.15); }
+    .lb-rank { font-size: 9px; color: #a0aec0; width: 12px; text-align: right; flex-shrink: 0; }
+    .lb-dot  { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; border: 1px solid rgba(0,0,0,0.15); }
     .lb-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
-    .lb-score { font-size: 11px; color: #7b8fa1; font-weight: 600; }
+    .lb-score { font-size: 10px; color: #7b8fa1; font-weight: 600; }
+    /* A gap marks "…and then there is you", when the player ranks outside the
+       visible rows and is pinned to the bottom. */
+    .lb-entry.lb-gap { margin-top: 4px; border-top: 1px dashed rgba(0,0,0,0.14); padding-top: 3px; }
 
     /* ─── Minimap (bottom-right) ─── */
     #minimap-wrap {
       position: absolute; bottom: 14px; right: 14px;
       padding: 10px;
     }
-    #minimap-wrap .mm-title {
-      font-family: 'Rajdhani', sans-serif;
-      font-size: 9px; font-weight: 700;
-      letter-spacing: 2px; text-transform: uppercase;
-      color: #7b8fa1; margin-bottom: 6px;
-    }
-    #minimap {
-      width: 150px; height: 150px;
-      border-radius: 6px;
-      border: 1.5px solid rgba(0,0,0,0.12);
-      display: block;
-    }
+    /* Size and radius live on `#minimap-wrap canvas` further down — the more
+       specific selector was silently winning anyway. */
+    #minimap { border: 1.5px solid rgba(0,0,0,0.12); display: block; }
 
     /* ─── Notifications (subtle, bottom-left corner) ─── */
     #notifs {
@@ -295,15 +322,6 @@
     #build-panel .u-name { font-size: 9px; }
     #build-panel .u-cost { font-size: 7px; }
     #build-panel .panel-handle { margin-bottom: 4px; }
-    #build-panel .bp-label {
-      font-family: 'Rajdhani', sans-serif;
-      font-size: 9px; font-weight: 700;
-      letter-spacing: 1.5px; color: #7b8fa1;
-      text-transform: uppercase;
-      writing-mode: vertical-rl; transform: rotate(180deg);
-      display: flex; align-items: center;
-      padding: 0 2px;
-    }
     .unit-btn {
       position: relative;
       display: flex; flex-direction: column; align-items: center;
@@ -345,32 +363,21 @@
     .unit-btn .u-cost { font-size: 8px; color: #8fa0b0; font-weight: 600; margin-top: 1px; }
     .unit-btn .u-badge { background: #e0392b; } /* queued-count badge is red */
 
-    /* Build-panel info column (spendable XP + population) */
-    #build-panel .bp-info {
-      display: flex; flex-direction: column; justify-content: center;
-      gap: 3px; padding: 0 8px 0 2px; margin-right: 2px;
-      border-right: 1px solid #e2e8f0;
-    }
-    .bp-stat { display: flex; align-items: baseline; gap: 5px; }
-    .bp-k { font-family: 'Rajdhani', sans-serif; font-size: 9px; font-weight: 700; letter-spacing: 1px; color: #7b8fa1; }
-    .bp-v { font-family: 'Rajdhani', sans-serif; font-size: 15px; font-weight: 700; color: #1a2a40; }
-    .bp-hint { font-size: 8px; color: #a9b6c4; margin-top: 2px; max-width: 84px; line-height: 1.3; }
 
     /* Skill / buffs panel (top-left) */
     #skill-panel {
       position: absolute; top: 14px; left: 14px;
       padding: 10px 12px; min-width: 150px;
     }
-    #skill-panel .sk-title {
-      font-family: 'Rajdhani', sans-serif; font-size: 10px; font-weight: 700;
-      letter-spacing: 2px; text-transform: uppercase; color: #7b8fa1;
-      margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center;
-    }
-    #skill-panel .sk-title #sk-pts {
-      background: #16a34a; color: #fff; border-radius: 10px;
-      padding: 1px 8px; font-size: 11px; letter-spacing: 0;
-    }
-    #skill-panel .sk-title.has-pts #sk-pts { animation: pulsePt 1.2s ease-in-out infinite; }
+    /*
+     * Only on screen when there is actually a point to spend.
+     *
+     * This needs no JavaScript: _updateSkillPanel already toggles `.has-pts`
+     * exactly when skillPoints > 0 (it was driving the badge pulse and nothing
+     * else). A panel that spends its whole life showing "+0% +0% +0%" is a
+     * corner of the screen wasted on a control you cannot use.
+     */
+    #skill-panel:not(.has-pts) { display: none; }
     @keyframes pulsePt { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
     .sk-row {
       display: flex; justify-content: space-between; align-items: center;
@@ -404,13 +411,38 @@
        A live match plays behind this. The scrim is only just opaque enough to
        keep text legible — the movement underneath is the best advert the game
        has, so it must not be hidden behind a solid panel. */
+    /*
+     * `justify-content: safe center` — the two declarations are deliberate.
+     *
+     * A plain centred flex column that overflows is clipped at BOTH ends, and
+     * the part cut off the TOP is unreachable, because scrolling never goes
+     * above a container's start. On a phone held upright that hid the
+     * BASEWAR.IO title completely: it was centred off the top of the screen.
+     *
+     * The `safe` keyword exists for exactly this. It means "centre this, but if
+     * that would push content out of reach, align to the start instead" — so it
+     * looks identical when there is room and degrades to a normal scroll when
+     * there is not. The bare `flex-start` on the line above is the fallback for
+     * anything that does not understand `safe`; such a browser gets a
+     * top-aligned scrolling menu, which is correct, just less pretty.
+     *
+     * Preferred over the auto-margin trick used by #gameover and #spec-modal
+     * because it does not care WHICH child is last — and here that changes as
+     * the responsive tiers shed .pillars.
+     */
     #intro {
       position: fixed; inset: 0; z-index: 100;
       display: flex; flex-direction: column;
-      align-items: center; justify-content: center;
+      align-items: center;
+      justify-content: flex-start;
+      justify-content: safe center;
       /* Scales with the viewport instead of a fixed 24px, so the menu still
-         fits on a laptop at 100% zoom rather than running off the bottom. */
-      padding: clamp(10px, 2.5vh, 28px) clamp(12px, 3vw, 32px);
+         fits on a laptop at 100% zoom rather than running off the bottom.
+         Inset-aware so .pillars cannot run under a landscape phone's notch. */
+      padding: max(clamp(10px, 2.5vh, 28px), env(safe-area-inset-top))
+               max(clamp(12px, 3vw, 32px), env(safe-area-inset-right))
+               max(clamp(10px, 2.5vh, 28px), env(safe-area-inset-bottom))
+               max(clamp(12px, 3vw, 32px), env(safe-area-inset-left));
       gap: 0;
       /* Darkest in the middle where the text sits, clearing toward the edges
          so the game is still visible around it. */
@@ -418,7 +450,7 @@
         radial-gradient(ellipse at center, rgba(244,246,249,0.93) 0%, rgba(244,246,249,0.72) 45%, rgba(244,246,249,0.45) 100%);
       backdrop-filter: blur(2px);
       transition: opacity .5s ease;
-      overflow-y: auto;
+      overflow-y: auto; overscroll-behavior: contain;
     }
 
     /* The HUD is always in the DOM; keep it out of sight until play starts. */
@@ -506,18 +538,10 @@
     .pillar p { font-size: 12.5px; line-height: 1.65; color: #46596b; }
     .pillar strong { color: #1a2a40; font-weight: 600; }
 
-    /* ── Compact controls ── */
-    .keys {
-      display: flex; flex-wrap: wrap; gap: 6px 14px; justify-content: center;
-      margin-top: clamp(10px, 2vh, 20px); width: min(880px, 94vw); pointer-events: none;
-    }
-    .keys .k { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: #46596b; }
-    .keys .k em { font-style: normal; color: #8fa0b0; }
-
     /* ─── Fitting real screens ───────────────────────────────────────────────
-       The awkward case is a laptop: wide but short. Below ~820px of height the
-       menu has to shed detail rather than scroll, because a menu you must
-       scroll to find the Play button on is a broken menu. */
+       These queries shed detail as the viewport gets SHORT, which is the
+       laptop case: wide but not tall. A menu you have to scroll to find the
+       Play button on is a broken menu. */
     @media (max-height: 820px) {
       .pillar p { font-size: 11.5px; line-height: 1.5; }
       .pillar h3 { font-size: 12px; }
@@ -527,11 +551,29 @@
          three ideas, and the live match behind is doing the real explaining. */
       .pillar p { display: none; }
       .pillar { padding: 8px 12px; }
-      .keys { font-size: 10.5px; }
     }
     @media (max-height: 580px) {
       .pillars { display: none; }     /* Play button always stays visible */
-      .keys { display: none; }
+    }
+
+    /* ─── Fitting a phone held upright ───────────────────────────────────────
+       A portrait phone is the opposite shape to a laptop: NARROW and TALL. None
+       of the max-height rules above fire on one (an iPhone is ~850px tall), so
+       nothing was shed — while the 393px width collapsed .pillars from a row
+       into a single tall stacked column. The result overflowed the screen, and
+       because #intro centres its children, the overflow was clipped at BOTH
+       ends, putting the BASEWAR.IO title off the top where scrolling cannot
+       reach it. The title was simply invisible on a phone held upright.
+
+       Same disease, same cure as #gameover and #spec-modal: shed on the narrow
+       axis too, and centre with auto margins instead of justify-content. */
+    @media (max-width: 560px) {
+      .pillar p { display: none; }             /* headings alone carry the idea */
+      .pillar   { padding: 8px 12px; }
+      .pillars  { margin-top: clamp(10px, 2vh, 18px); }
+    }
+    @media (max-width: 400px) {
+      .pillars { display: none; }              /* Play button always wins */
     }
 
     /* Phones and narrow windows. */
@@ -548,12 +590,6 @@
        Game.js's resize handler, and the camera zoom is recomputed from the
        window width so the whole map still fits at any size. */
     #app, #app canvas { display: block; width: 100%; height: 100%; }
-    .keys kbd {
-      background: rgba(255,255,255,0.95); border: 1px solid #b0bec5;
-      border-bottom-width: 2px; border-radius: 5px; padding: 2px 7px;
-      font-size: 10px; font-weight: 700; color: #1a2a40;
-      font-family: monospace; white-space: nowrap;
-    }
 
     .name-input {
       background: #ffffff; border: 2px solid #d5dde6; border-radius: 50px;
@@ -1112,8 +1148,6 @@
     @keyframes rhFade { 0%,4% {opacity:0} 10%,80% {opacity:1} 100% {opacity:0; visibility:hidden} }
     @keyframes rhSpin { 0%,60%,100% {transform:rotate(0)} 80% {transform:rotate(-90deg)} }
 
-    /* Armed ping button. */
-    #cmd-ping.armed { background: #fff7ed; border-color: #f59e0b; }
 
     /* ═══ T1 — any coarse pointer. Sizing and gesture hygiene only. ═══════ */
     @media (pointer: coarse) {
@@ -1173,121 +1207,343 @@
       }
     }
 
+    /* ═══════════════════════════════════════════════════════════════════════
+       PHONE LAYOUT
+       ═══════════════════════════════════════════════════════════════════════
+
+       Modelled on how diep.io and florr.io actually lay out a phone screen,
+       because they have had far more thumbs on them than this game has:
+
+         • The MIDDLE OF THE SCREEN IS SACRED. Nothing floats over it. Every
+           control is pinned to an edge or a corner.
+         • Primary actions are LARGE CIRCLES in the bottom corners, where a
+           thumb naturally rests when the phone is held in two hands. Not a row
+           of rectangles across the bottom — a thumb cannot reach the middle of
+           a 850px-wide screen without regripping.
+         • Secondary panels collapse to SMALL SQUARE ICONS in the top corners.
+           Icon only, no text: a label triples the width and tells the player
+           nothing they will not learn on first tap.
+         • The minimap is always visible in a corner rather than hidden behind
+           a button, because with no zoom control it is the only way to see the
+           whole battlefield.
+
+       The desktop layout is deliberately NOT preserved here. A phone is a
+       different device, not a small monitor.
+       ─────────────────────────────────────────────────────────────────────── */
+
+
+    /* ═══ Flat HUD on phones ═════════════════════════════════════════════
+       The squad rail already looked right — no card, just numbers over the
+       map. This extends that to every panel that stays open during play, so
+       the HUD reads as one system instead of a scatter of floating cards.
+
+       The collapsed corner buttons deliberately KEEP their card: a 44px
+       target with no background is invisible and un-tappable. Only the open
+       content goes flat. */
+    @media (pointer: coarse) and (max-width: 1024px) {
+      #build-panel,
+      #leaderboard:not(.collapsed),
+      #skill-panel:not(.collapsed) {
+        background: none;
+        border: none;
+        box-shadow: none;
+        backdrop-filter: none;
+      }
+      /* Restore the contrast those text colours assume, now that the white
+         card underneath them is gone. */
+      #build-panel, #build-panel *,
+      #leaderboard:not(.collapsed), #leaderboard:not(.collapsed) *,
+      #skill-panel:not(.collapsed), #skill-panel:not(.collapsed) * {
+        text-shadow:
+          0 1px 2px rgba(255,255,255,0.95),
+          0 0 4px rgba(255,255,255,0.85),
+          0 0 8px rgba(255,255,255,0.6);
+      }
+
+      /* Build buttons, sized and shaped like squad entries. */
+      #build-panel { padding: 0; gap: 5px; }
+      #build-panel .panel-body { gap: 5px; }
+      #build-panel .unit-btn,
+      #build-panel .econ-btn {
+        min-width: 52px; padding: 4px 3px; border-radius: 9px;
+        background: rgba(255,255,255,0.40);
+        border: 1.5px solid transparent;
+      }
+      #build-panel .unit-btn.active,
+      #build-panel .econ-btn.active { border-color: #0077cc; background: rgba(234,245,255,0.75); }
+      #build-panel .unit-btn .u-icon,
+      #build-panel .econ-btn .u-icon { font-size: 17px; }
+      #build-panel .u-name { font-size: 8px; }
+      #build-panel .u-cost, #build-panel .u-sub { font-size: 7px; }
+      /* The cost line is the second thing you read, after the icon — the
+         section labels and dividers are not worth their width here. */
+      #build-panel .bp-divider, #build-panel .bp-section-lbl { display: none; }
+
+      /* Buff rows: compact, but still a 44px target. */
+      .sk-row {
+        min-height: 40px; padding: 2px 8px; gap: 8px;
+        font-size: 11px; margin-bottom: 2px;
+      }
+      .sk-row.spendable { background: rgba(242,249,255,0.7); }
+    }
     /* ═══ T2 — landscape phone. The preferred layout. ════════════════════ */
     @media (pointer: coarse) and (orientation: landscape) and (max-height: 520px) {
-      #hud { --dock-h: 52px; --rail-w: 60px; }
+      #hud { --dock-h: 0px; --rail-w: 56px; }
 
-      /* The HUD hugs the edges; nothing floats over the middle of the map. */
+      /* ── Bottom-right: the three actions, as big circles ─────────────── */
       #cmd-bar {
         top: auto; bottom: var(--gut-b);
         right: var(--gut-r); left: auto; transform: none;
-        flex-direction: row; padding: 5px;
+        flex-direction: row; align-items: flex-end;
+        gap: 12px;
+        /* The bar itself is invisible — only the circles show. A panel
+           background here would be a large opaque block over the map. */
+        background: none; border: none; box-shadow: none; backdrop-filter: none;
+        padding: 0;
       }
-      .cmd-btn { min-width: 50px; padding: 4px 6px; }
-      .cmd-btn .c-name { font-size: 8px; }
+      .cmd-btn {
+        width: 62px; height: 62px; min-width: 0; min-height: 0;
+        border-radius: 50%;
+        /* The base .cmd-btn is a flex COLUMN sized to its three stacked spans.
+           With only the icon left, it would sit at the top of the circle. */
+        justify-content: center;
+        padding: 0; gap: 0;
+        background: rgba(255,255,255,0.82);
+        border: 1.5px solid rgba(0,0,0,0.10);
+        box-shadow: 0 3px 14px rgba(0,0,0,0.18);
+        backdrop-filter: blur(6px);
+      }
+      /* Icon only. The name and key hint are noise at this size. */
+      .cmd-btn .c-icon { font-size: 26px; margin: 0; }
+      .cmd-btn .c-name, .cmd-btn .c-key { display: none; }
+      /* Defend is the one you press under pressure — make it the biggest and
+         put it nearest the thumb. */
+      #cmd-defend { width: 76px; height: 76px; }
+      #cmd-defend .c-icon { font-size: 32px; }
 
-      /* Squad rail down the left. */
+      /* ── Bottom-left: the camera stick ───────────────────────────────── */
+      #joystick {
+        left: var(--gut-l); bottom: var(--gut-b);
+        width: 112px; height: 112px;
+      }
+
+      /* ── Left edge: squads, a thin vertical rail ─────────────────────── */
       #group-panel {
-        top: var(--left-top); left: var(--gut-l);
-        width: var(--rail-w); min-width: 0;
-        bottom: calc(var(--gut-b) + var(--dock-h) + 6px);
+        top: calc(var(--gut-t) + 52px); left: var(--gut-l);
+        width: var(--rail-w); min-width: 0; padding: 5px;
+        bottom: calc(var(--gut-b) + 124px);   /* clear of the joystick */
         max-height: none;
+        background: none; border: none; box-shadow: none; backdrop-filter: none;
         scroll-snap-type: y proximity;
       }
       #group-panel .gp-title { display: none; }
-      .group-entry { scroll-snap-align: start; }
+      .group-entry { scroll-snap-align: start; padding: 4px 2px; }
+      .group-entry .g-count { font-size: 22px; }
+      .group-entry .g-status { font-size: 7px; }
+      .group-empty { display: none; }        /* an empty rail says it already */
 
-      /* Level chip moves to the top-right, vacating the bottom-right corner
-         it shared with the minimap. */
-      #level-bar { top: var(--gut-t); right: calc(var(--gut-r) + 52px); bottom: auto; }
+      /* ── Corner buttons: every panel collapses to a 44px icon square ──── */
+      /*
+       * Icon only, no label. A word triples the width and tells the player
+       * nothing they will not learn the first time they tap it — which is
+       * exactly how diep.io and florr.io treat their corner controls.
+       */
+      #skill-panel.collapsed, #leaderboard.collapsed, #minimap-wrap.collapsed {
+        width: 44px; height: 44px; padding: 0 !important;
+        display: flex; align-items: center; justify-content: center;
+      }
+      #skill-panel.collapsed .handle-title,
+      #leaderboard.collapsed .handle-title,
+      #minimap-wrap.collapsed .handle-title { display: none; }
+      #skill-panel.collapsed .panel-handle,
+      #leaderboard.collapsed .panel-handle,
+      #minimap-wrap.collapsed .panel-handle { justify-content: center; gap: 0; }
 
-      /* Documents WASD / Tab / X / C / V — keys that do not exist here. Its
-         content lives in the pause modal instead. */
-      #controls-hint { display: none !important; }
+      /* Open, they float over the map instead of pushing anything around. */
+      #skill-panel:not(.collapsed) { max-width: 200px; }
+      #leaderboard:not(.collapsed) { min-width: 168px; max-height: 66dvh; overflow-y: auto; }
 
+      /* ── Top-right: leaderboard button, minimap toggle beneath it ─────── */
+      #leaderboard { top: var(--gut-t); right: var(--gut-r); }
+      #minimap-wrap {
+        top: calc(var(--gut-t) + 52px); right: var(--gut-r); bottom: auto;
+        padding: 5px;
+      }
+      /*
+       * A real toggle, not a permanently-open square.
+       *
+       * It used to be forced visible with the handle hidden, which meant there
+       * was no way to get the corner back — and the map was stuck at a size too
+       * small to read. Now the handle IS the toggle: tap the 🗺️ square to open
+       * the map as a larger overlay, tap the ✕ to close it again.
+       */
+      #minimap-wrap:not(.collapsed) { padding: 6px; }
+      #minimap-wrap canvas { width: 150px; height: 150px; }
+      #minimap-close { display: block; }
+
+      /* ── Top-left: buffs, which is absent unless a point is available ─── */
+      #skill-panel { top: var(--gut-t); left: var(--gut-l); min-width: 0; }
+
+      /* ── Bottom, between the stick and the actions ───────────────────── */
+      /* NOT centred. On a 667px-wide screen a centred strip runs straight into
+         the action circles, and on any width it runs into the joystick. It is
+         anchored to the right of the stick instead, with a width bounded by
+         where the actions begin. */
+      #build-panel {
+        left: calc(var(--gut-l) + 132px); right: auto; transform: none;
+        bottom: var(--gut-b);
+        max-width: calc(100dvw - 132px - 250px - var(--gut-r));
+        padding: 4px 6px;
+      }
+      #build-panel .panel-handle { min-height: 40px; }
+      #build-panel .bp-section-lbl { display: none; }
+      #build-panel .panel-body { gap: 6px; }
+      .unit-btn, .econ-btn { min-width: 56px; }
+
+      /* ── Notifications: above the stick, capped ──────────────────────── */
       #notifs {
-        left: calc(var(--gut-l) + var(--rail-w) + 8px);
-        bottom: calc(var(--gut-b) + var(--dock-h) + 6px);
-        max-width: 200px;
+        left: calc(var(--gut-l) + var(--rail-w) + 6px);
+        bottom: calc(var(--gut-b) + 6px);
+        max-width: 180px;
       }
       #notifs .notif:nth-child(n+3) { display: none; }
-      .notif { white-space: normal; }
+      .notif { white-space: normal; font-size: 10px; }
 
-      #build-panel { left: calc(var(--gut-l) + var(--rail-w) + 90px); transform: none; }
-      #minimap-wrap { bottom: calc(var(--gut-b) + var(--dock-h) + 6px); right: var(--gut-r); }
-
-      /* The stick sits above the dock, clear of both. */
-      #joystick { bottom: calc(var(--gut-b) + var(--dock-h) + 6px); width: 104px; height: 104px; }
+      /* ── Shed the rest ───────────────────────────────────────────────── */
+      #controls-hint { display: none !important; }
+      /* Level/XP is reference, not a live decision — it lives behind the
+         top-left buffs icon rather than taking a corner of its own. */
+      #level-bar { display: none; }
     }
 
-    /* ═══ T3 — portrait phone. Compacted. ════════════════════════════════ */
+    /* ═══ T3 — portrait phone ════════════════════════════════════════════
+       Width is the scarce axis and height is abundant, so everything that was
+       a vertical rail in landscape becomes a horizontal band here, stacked up
+       from the bottom. The thumb zone is the bottom third of the screen. */
     @media (pointer: coarse) and (orientation: portrait) and (max-width: 520px) {
-      #hud { --dock-h: 52px; --rail-h: 62px; --strip-h: 0px; }
+      #hud { --dock-h: 0px; --rail-h: 58px; }
 
-      /* The squad rail rotates: a 60px vertical rail costs 15% of a 393px
-         width, but a 62px horizontal one costs only 7% of an 852px height. */
+      /* Actions: still circles, still bottom-right, above the squad rail. */
+      #cmd-bar {
+        top: auto; bottom: calc(var(--gut-b) + var(--rail-h) + 8px);
+        right: var(--gut-r); left: auto; transform: none;
+        flex-direction: row; align-items: flex-end; gap: 10px;
+        background: none; border: none; box-shadow: none; backdrop-filter: none;
+        padding: 0;
+      }
+      .cmd-btn {
+        width: 58px; height: 58px; min-width: 0; min-height: 0;
+        border-radius: 50%; justify-content: center; padding: 0; gap: 0;
+        background: rgba(255,255,255,0.82);
+        border: 1.5px solid rgba(0,0,0,0.10);
+        box-shadow: 0 3px 14px rgba(0,0,0,0.18);
+        backdrop-filter: blur(6px);
+      }
+      .cmd-btn .c-icon { font-size: 24px; margin: 0; }
+      .cmd-btn .c-name, .cmd-btn .c-key { display: none; }
+      #cmd-defend { width: 70px; height: 70px; }
+      #cmd-defend .c-icon { font-size: 30px; }
+
+      /* Stick bottom-left, mirroring the actions. */
+      #joystick {
+        left: var(--gut-l);
+        bottom: calc(var(--gut-b) + var(--rail-h) + 8px);
+        width: 104px; height: 104px;
+      }
+
+      /* Squads: a horizontal strip along the very bottom. A 56px vertical rail
+         would cost 14% of a 393px width; 58px of height costs 7% of 852px. */
       #group-panel {
         top: auto; left: var(--gut-l); right: var(--gut-r); width: auto;
-        bottom: calc(var(--gut-b) + var(--dock-h) + 6px);
-        height: var(--rail-h); max-height: none;
+        bottom: var(--gut-b);
+        height: var(--rail-h); max-height: none; padding: 4px;
         overflow-x: auto; overflow-y: hidden;
         touch-action: pan-x;
         scroll-snap-type: x proximity;
       }
       #group-panel .gp-title { display: none; }
-      #group-list { flex-direction: row; }
-      .group-entry { flex: 0 0 auto; min-width: 54px; scroll-snap-align: start; }
+      #group-list { flex-direction: row; gap: 5px; }
+      .group-entry { flex: 0 0 auto; min-width: 50px; scroll-snap-align: start; }
+      .group-entry .g-count { font-size: 22px; }
+      .group-entry .g-status { font-size: 7px; }
 
-      #cmd-bar {
-        top: auto; bottom: var(--gut-b);
-        left: var(--gut-l); right: var(--gut-r); transform: none;
-        flex-direction: row; justify-content: space-between; padding: 4px;
+      /* Corner buttons, stacked down the right below the status strip — at
+         393px wide there is no room for a centred clock and a corner button on
+         the same row. */
+      #skill-panel.collapsed, #leaderboard.collapsed, #minimap-wrap.collapsed {
+        width: 44px; height: 44px; padding: 0 !important;
+        display: flex; align-items: center; justify-content: center;
       }
-      .cmd-btn { min-width: 0; flex: 1 1 0; padding: 4px 2px; }
-      .cmd-btn .c-name { font-size: 8px; }
+      #skill-panel.collapsed .handle-title,
+      #leaderboard.collapsed .handle-title,
+      #minimap-wrap.collapsed .handle-title { display: none; }
+      #skill-panel.collapsed .panel-handle,
+      #leaderboard.collapsed .panel-handle,
+      #minimap-wrap.collapsed .panel-handle { justify-content: center; gap: 0; }
 
-      #controls-hint { display: none !important; }
-      #level-bar  { bottom: auto; top: var(--gut-t); right: var(--gut-r); }
-      #notifs {
-        left: var(--gut-l); right: var(--gut-r); max-width: none;
-        bottom: calc(var(--gut-b) + var(--dock-h) + var(--rail-h) + 10px);
+      #leaderboard { top: calc(var(--gut-t) + 44px); right: var(--gut-r); }
+      #minimap-wrap {
+        top: calc(var(--gut-t) + 96px); right: var(--gut-r); bottom: auto; padding: 5px;
       }
-      #notifs .notif:nth-child(n+3) { display: none; }
-      .notif { white-space: normal; }
+      #minimap-wrap:not(.collapsed) { padding: 6px; }
+      #minimap-wrap canvas { width: 132px; height: 132px; }
+      #minimap-close { display: block; }
 
-      /* A horizontal scroller is wrong at 393px; a wrapping row is not. */
+      #leaderboard:not(.collapsed) { min-width: 160px; max-height: 50dvh; overflow-y: auto; }
+      #skill-panel { top: var(--gut-t); left: var(--gut-l); min-width: 0; }
+      #skill-panel:not(.collapsed) { max-width: 190px; }
+
+      /* Build opens as a bottom sheet — a horizontal scroller is wrong at
+         393px wide, a wrapping grid is not. */
+      /* Clear of the joystick, which is 104px tall sitting 8px above the squad
+         rail — so anything below rail+112 would sit on top of it. */
       #build-panel {
         left: var(--gut-l); right: var(--gut-r); transform: none;
-        bottom: calc(var(--gut-b) + var(--dock-h) + var(--rail-h) + 10px);
+        bottom: calc(var(--gut-b) + var(--rail-h) + 124px);
         flex-wrap: wrap; justify-content: center;
+        padding: 5px 6px;
       }
+      #build-panel .bp-section-lbl { display: none; }
+      .unit-btn, .econ-btn { min-width: 62px; }
 
-      /* Stick above the rail and dock, on the left where a thumb reaches. */
-      #joystick {
-        bottom: calc(var(--gut-b) + var(--dock-h) + var(--rail-h) + 60px);
-        width: 104px; height: 104px;
+      #notifs {
+        left: var(--gut-l); right: var(--gut-r); max-width: none;
+        bottom: calc(var(--gut-b) + var(--rail-h) + 196px);
       }
+      #notifs .notif:nth-child(n+3) { display: none; }
+      .notif { white-space: normal; font-size: 10px; }
+
+      #controls-hint { display: none !important; }
+      #level-bar { display: none; }
 
       /* The ONLY rule that shows the hint lives inside (orientation: portrait),
          so rotating makes it revert to display:none in the same layout pass.
          That is a stronger guarantee than any JS could give. */
-      #rotate-hint:not(.dismissed) { display: flex; }
+      #rotate-hint:not(.dismissed) {
+        display: flex;
+        bottom: calc(var(--gut-b) + var(--rail-h) + 196px);
+      }
     }
 
     /* ═══ T4 — very small. Shed rather than shrink. ══════════════════════ */
     @media (pointer: coarse) and (orientation: landscape) and (max-height: 380px) {
-      #hud { --dock-h: 46px; --rail-w: 52px; }
-      #level-bar, #match-ping { display: none; }
+      #hud { --rail-w: 48px; }
+      #match-ping { display: none; }
       #notifs .notif:nth-child(n+2) { display: none; }
-      .group-entry .g-count { font-size: 22px; }
+      .cmd-btn { width: 54px; height: 54px; }
+      #cmd-defend { width: 64px; height: 64px; }
       #joystick { width: 92px; height: 92px; }
+      #minimap-wrap canvas { width: 84px; height: 84px; }
+      #leaderboard { top: calc(var(--gut-t) + 98px); }
+      .group-entry .g-count { font-size: 19px; }
     }
     @media (pointer: coarse) and (orientation: portrait) and (max-width: 360px) {
       #match-ping { display: none; }
       #notifs .notif:nth-child(n+2) { display: none; }
-      .cmd-btn .c-name { display: none; }
+      .cmd-btn { width: 52px; height: 52px; }
+      #cmd-defend { width: 62px; height: 62px; }
+      #joystick { width: 92px; height: 92px; }
     }
-
     @media (prefers-reduced-motion: reduce) {
       #rotate-hint, #rotate-hint .rh-icon { animation: none; }
     }
@@ -1411,22 +1667,16 @@
         <div class="ctrl-row">
           <span class="key-badge"><kbd>R</kbd> Release garrison</span>
           <span class="key-badge"><kbd>F</kbd> Defend base</span>
-          <span class="key-badge"><kbd>X</kbd> Split</span>
-          <span class="key-badge"><kbd>C</kbd> Merge</span>
-          <span class="key-badge"><kbd>V</kbd> Balance</span>
         </div>
         <div class="ctrl-row">
-          <span class="key-badge"><kbd>Q</kbd> Build panel</span>
           <span class="key-badge"><kbd>B</kbd> Buffs</span>
           <span class="key-badge"><kbd>H</kbd> This list</span>
-        </div>
-        <div class="ctrl-row">
-          <span class="key-badge"><kbd>1 2 3 4</kbd> Ping attack / defend / help / retreat</span>
         </div>
         <!-- Mode-specific. Neither was documented anywhere at all. -->
         <div class="ctrl-row">
           <span class="key-badge"><kbd>Click node</kbd> Hold it for gold (mining mode)</span>
           <span class="key-badge"><kbd>Click ally base</kbd> Donate a soldier (team mode)</span>
+        </div>
         <!-- Touch equivalents. This panel is hidden entirely on a phone (the
              keys above do not exist there), but a hybrid device can see both. -->
         <div class="ctrl-row touch-ctrl">
@@ -1437,7 +1687,6 @@
           <span class="key-badge"><kbd>Drag map</kbd> Box-select</span>
           <span class="key-badge"><kbd>Two-finger tap</kbd> Deselect all</span>
           <span class="key-badge"><kbd>Stick</kbd> Move the camera</span>
-        </div>
         </div>
       </div>
     </div>
@@ -1477,29 +1726,39 @@
 
 
     <!-- Squad command bar (right-centre on desktop; becomes the bottom dock on touch) -->
+    <!--
+      Three actions, and only three.
+
+      Split / Merge / Even / Ping / Clear were removed outright. Eight buttons
+      in a row is not a control scheme, it is a menu — and on a phone that row
+      ran the full width of the screen and collided with the build panel. The
+      three that remain are the ones you reach for mid-fight; on touch they
+      become large circular thumb targets in the bottom-right corner, the way
+      diep.io and florr.io place their primary actions.
+    -->
     <div id="cmd-bar" class="panel">
       <button class="cmd-btn" id="cmd-release" title="Release the garrison held inside your base as one fresh 15-formation"><span class="c-icon">🏰</span><span class="c-name">Release</span><span class="c-key">R</span></button>
       <button class="cmd-btn" id="cmd-defend"  title="Send the selected squad to defend the mother base"><span class="c-icon">🛡️</span><span class="c-name">Defend</span><span class="c-key">F</span></button>
       <button class="cmd-btn" id="cmd-base"    title="Focus camera on your mother base"><span class="c-icon">🏠</span><span class="c-name">Base</span><span class="c-key">Spc</span></button>
-      <button class="cmd-btn touch-only" id="cmd-split"   title="Split the selected squad in two [X]"><span class="c-icon">✂️</span><span class="c-name">Split</span><span class="c-key">X</span></button>
-      <button class="cmd-btn touch-only" id="cmd-merge"   title="Merge the selected squad with a nearby one [C]"><span class="c-icon">⊕</span><span class="c-name">Merge</span><span class="c-key">C</span></button>
-      <button class="cmd-btn touch-only" id="cmd-balance" title="Even out the size of all your squads [V]"><span class="c-icon">⚖️</span><span class="c-name">Even</span><span class="c-key">V</span></button>
-      <button class="cmd-btn touch-only" id="cmd-ping"    title="Drop a map ping — tap the map next"><span class="c-icon">📍</span><span class="c-name">Ping</span></button>
-      <!-- Deselect. A two-finger tap does the same thing, but nobody discovers
-           that unprompted, so the gesture needs a visible twin. -->
-      <button class="cmd-btn touch-only" id="cmd-clear"   title="Deselect all squads"><span class="c-icon">✕</span><span class="c-name">Clear</span></button>
     </div>
 
     <!-- Build panel (bottom-center) — click to QUEUE (right-click removes soldiers) -->
-    <div id="build-panel" class="panel collapsible" data-hotkey="KeyQ" data-touch-collapsed>
-      <div class="panel-handle">
-        <span class="handle-icon">⚙️</span>
-        <span class="handle-title">Build</span>
-        <span class="bp-mini"><span class="bp-k">GOLD</span> <span class="bp-v" id="bp-gold">0</span></span>
-        <span class="bp-mini"><span class="bp-k">POP</span> <span class="bp-v" id="bp-pop">0/8</span></span>
-        <span class="bp-mini"><span class="bp-k">🏰</span> <span class="bp-v" id="bp-garrison">0/15</span></span>
-        <span class="handle-hint">Q</span>
-      </div>
+    <!--
+      NOT a collapsible any more.
+
+      It used to be a modal: a gear-icon handle you tapped to open, which then
+      changed size as it expanded, with the three buttons hidden inside. That is
+      a lot of ceremony for three buttons you press constantly — and the resize
+      moved the buttons out from under your thumb mid-tap.
+
+      Now the buttons are simply always there, sized like squad entries. Gone
+      with the handle: the ⚙️ icon, the "BUILD" title, the Q hotkey, and the POP
+      and garrison readouts. Gold survives because it is the one number you
+      check before every purchase, and it moved OUT of the deleted handle into
+      its own line — HUDRenderer writes to #bp-gold by id.
+    -->
+    <div id="build-panel" class="panel">
+      <div class="bp-gold-line"><span class="bp-v" id="bp-gold">0</span><span class="bp-g">g</span></div>
       <div class="panel-body">
       <div class="bp-section-lbl">Soldiers</div>
       <div class="unit-btn active" data-unit="grunt" data-lv="1" title="Your soldier. Build a squad and send it to war.">
@@ -1649,22 +1908,15 @@
       </div>
     </div>
 
-    <div class="keys">
-      <span class="k"><kbd>Click</kbd> select squad</span>
-      <span class="k"><kbd>Click ground</kbd> move</span>
-      <span class="k"><kbd>Click enemy</kbd> attack</span>
-      <span class="k"><kbd>Drag</kbd> select many</span>
-      <span class="k"><kbd>Space</kbd> your base</span>
-      <span class="k"><kbd>Tab</kbd> next squad</span>
-      <span class="k"><kbd>F</kbd> defend</span>
-      <span class="k"><kbd>R</kbd> release garrison</span>
-      <span class="k"><kbd>X</kbd> split</span>
-      <span class="k"><kbd>C</kbd> merge</span>
-      <span class="k"><kbd>V</kbd> balance</span>
-      <span class="k"><kbd>1-4</kbd> ping team</span>
-      <span class="k"><kbd>WASD</kbd> pan</span>
-      <span class="k"><kbd>Click ally base</kbd> donate a soldier <em>(team mode)</em></span>
-    </div>
+    <!--
+      The keyboard cheat-sheet that used to sit here has been removed. It listed
+      fourteen shortcuts to somebody who had not yet seen the game, which is
+      more than anyone absorbs before their first match — and on a phone it was
+      actively wrong, since none of those keys exist there.
+
+      The same list still lives in-game, in the Controls panel (press H), where
+      it is read at the moment it is actually useful and adapts to touch.
+    -->
   </div>
 
   <!-- ─── Specialization Modal ─── -->

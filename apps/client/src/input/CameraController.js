@@ -1,4 +1,5 @@
 import { WORLD_SIZE } from '@basewar/sim';
+import { isTouchNow } from './touchDetect.js';
 
 /**
  * CameraController — the single owner of camera zoom and bounds.
@@ -88,12 +89,19 @@ export class CameraController {
   /**
    * @param {object} cam    the plain camera object owned by Game
    * @param {object} [opts]
-   * @param {boolean} [opts.touch]  start at the touch play zoom
+   * @param {boolean} [opts.touch]  FORCE the touch play zoom on or off. Leave
+   *   undefined in the real app so `fit()` decides live; tests pass it
+   *   explicitly to pin one branch without needing a DOM.
    */
-  constructor(cam, { touch = false } = {}) {
+  constructor(cam, { touch } = {}) {
     this.cam = cam;
-    this.touch = touch;
+    this.touch = touch;              // undefined === "decide at fit() time"
     this._resizeQueued = false;
+  }
+
+  /** Live where possible, overridden when a caller was explicit. */
+  _isTouch() {
+    return typeof this.touch === 'boolean' ? this.touch : isTouchNow();
   }
 
   get min() { return zoomMin(this.cam.width, this.cam.height); }
@@ -110,7 +118,14 @@ export class CameraController {
     // At FIT * 1.8 the 22px minimum touch radius maps to ~41 world units, which
     // is about one squad's half-span — big enough to hit reliably, small enough
     // that two adjacent squads never merge into one target.
-    const mult = (this.touch && k === FIT_PLAY) ? TOUCH_ZOOM_MULT : 1;
+    //
+    // Asked LIVE, not read from a flag captured at construction. It used to be
+    // the latter, and the flag came from a module-level const evaluated at
+    // import time — so on any device where the media query did not fire at load
+    // (a tablet with a mouse, or Chrome device emulation, where the host mouse
+    // keeps `any-pointer: fine` matching) the multiplier silently never applied
+    // and the whole match rendered at 44% of the intended size.
+    const mult = (this._isTouch() && k === FIT_PLAY) ? TOUCH_ZOOM_MULT : 1;
     cam.zoom = clamp(fitZoom(cam.width, cam.height, k) * mult, this.min, this.max);
     clampCamera(cam);
     return cam.zoom;

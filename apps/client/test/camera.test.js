@@ -96,3 +96,37 @@ test('touch starts closer in than desktop, and inside the allowed range', () => 
   assert.ok(touch > desktop, 'touch must start zoomed in for finger-sized targets');
   assert.ok(touch <= zoomMax(390, 844) + 1e-9, 'and still within the clamp');
 });
+
+test('the touch decision is made LIVE, not frozen at construction', () => {
+  // THE REGRESSION THIS LOCKS: `touch` used to be captured once, from a
+  // module-level const evaluated at import time. On any device where the media
+  // query did not fire at load — a tablet with a mouse attached, or Chrome's
+  // device emulation, where the host mouse keeps `any-pointer: fine` matching —
+  // the 1.8x touch multiplier silently never applied, and the entire match
+  // rendered at 44% of the intended size. Worse, nothing could recover it: a
+  // device that became touch-capable later kept desktop zoom all session.
+  //
+  // Driven through `document.body.classList`, which is the strongest evidence
+  // isTouchNow() consults and the one that survives a lying media query.
+  const body = globalThis.document?.body;
+  if (!body) return;                       // no DOM in this runner; nothing to assert
+
+  const had = body.classList.contains('touch');
+  const cam = { x: 1400, y: 1400, zoom: 0, width: 852, height: 393 };
+  const ctl = new CameraController(cam);   // no explicit touch → decide live
+
+  try {
+    body.classList.remove('touch');
+    ctl.fit(FIT_PLAY);
+    const withoutTouch = cam.zoom;
+
+    body.classList.add('touch');
+    ctl.fit(FIT_PLAY);
+    const withTouch = cam.zoom;
+
+    assert.ok(withTouch > withoutTouch * 1.7,
+      `the SAME controller must change its answer: ${withoutTouch} -> ${withTouch}`);
+  } finally {
+    if (had) body.classList.add('touch'); else body.classList.remove('touch');
+  }
+});

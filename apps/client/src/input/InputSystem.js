@@ -82,14 +82,6 @@ export class InputSystem {
     this._selBox.style.display = 'none';
     // A half-finished gesture must not survive into the next match.
     this._gest?.reset();
-    this._pingArmed = null;
-  }
-
-  /** Send a map ping at the current mouse position. */
-  pingAt(kind) {
-    if (!this._enabled || !this._mouse) return;
-    const wp = this._screenToWorld(this._mouse.x, this._mouse.y);
-    this._send({ t: 'ping', x: wp.x, y: wp.y, kind });
   }
 
   update(dt) {
@@ -284,19 +276,10 @@ export class InputSystem {
         // is selected, otherwise pause. One key, one effect, and both deselect
         // routes go through unselect().
 
-        // Squad management. These were advertised in the controls list but
-        // never actually bound — the commands existed, nothing called them.
-        case 'KeyX':   this.doSplit(); break;
-        case 'KeyC':   this.doMerge(); break;
-        case 'KeyV':   this.doBalance(); break;
-
-        // Map pings — a small fixed vocabulary instead of text chat. Gives most
-        // of the coordination value without needing moderation, reporting and
-        // profanity filtering at scale.
-        case 'Digit1': this.pingAt('attack');  break;
-        case 'Digit2': this.pingAt('defend');  break;
-        case 'Digit3': this.pingAt('help');    break;
-        case 'Digit4': this.pingAt('retreat'); break;
+        // Split (X), Merge (C), Even (V) and the 1-4 map pings were removed.
+        // They were rarely-used verbs competing for space with the three that
+        // matter, and on a phone they turned the action bar into a menu.
+        // The server still understands the commands; nothing here sends them.
       }
     });
     window.addEventListener('keyup', e => { this._keys[e.code] = false; });
@@ -442,13 +425,6 @@ export class InputSystem {
       return;
     }
 
-    // One-shot ping mode, armed from the touch dock. Consumes this tap.
-    if (this._pingArmed) {
-      this._send({ t: 'ping', x: wp.x, y: wp.y, kind: this._pingArmed });
-      this._pingArmed = null;
-      return;
-    }
-
     const sel = this.selectedGroups();
     if (!sel.length) return;
     const ids = sel.map(g => g.id);
@@ -482,10 +458,6 @@ export class InputSystem {
     this._markOrder(wp.x, wp.y, 'move');
   }
 
-  /** Arm one-shot ping mode; the next map tap drops the ping and disarms. */
-  armPing(kind) { this._pingArmed = kind; }
-  get pingArmed() { return this._pingArmed || null; }
-
   /** Show the destination immediately, before the simulation has confirmed it. */
   _markOrder(x, y, kind = 'move') {
     this.pendingOrders.push({ x, y, kind, at: performance.now() });
@@ -493,9 +465,6 @@ export class InputSystem {
 
   // ── Actions the HUD buttons also trigger ───────────────────────────────────
   doDefend()  { const ids = this._sel.ids; if (ids.length) this._send({ t: 'defend', g: ids }); }
-  doSplit()   { const g = this.selectedGroup(); if (g) this._send({ t: 'split', g: g.id }); }
-  doMerge()   { const g = this.selectedGroup(); if (g) this._send({ t: 'merge', g: g.id }); }
-  doBalance() { this._send({ t: 'balance' }); }
 
   // ── Hit testing ────────────────────────────────────────────────────────────
   /**

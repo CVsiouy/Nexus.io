@@ -43,20 +43,6 @@ function initCollapsiblePanels() {
 
 
 /**
- * Panels that should start CLOSED on a phone.
- *
- * CSS cannot set an element's initial class, so this is the one genuinely
- * unavoidable line of JS in the responsive work. #build-panel ships expanded
- * and eats ~90px — 23% of a landscape phone's height — before the player has
- * touched anything.
- */
-function collapseForTouch() {
-  if (!window.matchMedia?.('(pointer: coarse) and (max-width: 900px)').matches) return;
-  document.querySelectorAll('[data-touch-collapsed]')
-    .forEach(p => p.classList.add('collapsed'));
-}
-
-/**
  * The portrait rotate hint auto-dismisses via a CSS animation; this only adds
  * the "and don't show it again" half.
  */
@@ -117,7 +103,6 @@ async function main() {
   await game.init();
 
   initCollapsiblePanels();
-  collapseForTouch();
   initRotateHint();
   initQualityToggle(game);
 

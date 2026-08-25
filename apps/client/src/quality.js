@@ -37,7 +37,23 @@ export function writeQuality(v) {
  */
 export function qualityOpts(q) {
   const dpr = window.devicePixelRatio || 1;
+  // ANTIALIAS STAYS ON IN BOTH PROFILES, deliberately.
+  //
+  // Turning it off was a real visual regression rather than a fair trade. The
+  // world grid is drawn as very thin lines, and without multisampling a
+  // sub-pixel line is a binary hit-or-miss against the pixel centre — so lines
+  // dropped out individually and flickered as the camera panned. The grid is
+  // the game's entire visual ground; losing it costs far more than the frames
+  // it buys.
+  //
+  // The resolution drop is where the real saving is anyway: on a DPR-3 phone
+  // 1.5 instead of 2 is ~44% fewer pixels shaded every frame.
+  //
+  // Keeping it constant also fixes an honesty problem: antialias is a WebGL
+  // context-creation flag, so applyQuality() cannot change it on a live
+  // renderer. The menu used to offer a switch that silently half-worked until
+  // the next reload.
   return q === 'reduced'
-    ? { antialias: false, resolution: Math.min(dpr, 1.5) }
-    : { antialias: true,  resolution: Math.min(dpr, 2) };
+    ? { antialias: true, resolution: Math.min(dpr, 1.5) }
+    : { antialias: true, resolution: Math.min(dpr, 2) };
 }

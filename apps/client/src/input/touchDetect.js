@@ -46,6 +46,27 @@ export function detectTouch() {
 export const touchLikely = detectTouch();
 
 /**
+ * "Is this a touch device?", asked at the MOMENT IT MATTERS.
+ *
+ * `touchLikely` above is evaluated once, when this module is first imported.
+ * That is fine for the initial CSS class, but it is wrong for any decision made
+ * later — and it caused a real bug: CameraController captured it at
+ * construction and used it to gate the 1.8x touch zoom, so on any device where
+ * the media query did not fire at load (a tablet with a mouse attached, or
+ * Chrome's device emulation, where the host mouse keeps `any-pointer: fine`
+ * matching) the game rendered at 44% of the intended size for the whole match.
+ *
+ * The `body.touch` check comes first because it is the strongest evidence there
+ * is: it is only ever added after a REAL touch pointer has been seen, and it is
+ * never removed. So once the player has actually touched the screen, this
+ * answers correctly regardless of what the media queries claim.
+ */
+export function isTouchNow() {
+  if (typeof document !== 'undefined' && document.body?.classList.contains('touch')) return true;
+  return detectTouch();
+}
+
+/**
  * Mark the document so CSS can respond, and keep marking it as evidence
  * arrives. Classes are only ever ADDED, never removed: a hybrid user who has
  * touched once ends up with `.touch` and `.has-mouse` together, meaning large

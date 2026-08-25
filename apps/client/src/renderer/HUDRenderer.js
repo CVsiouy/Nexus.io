@@ -50,8 +50,6 @@ export class HUDRenderer {
     this._buildBtns  = [...document.querySelectorAll('#build-panel .unit-btn')];
     this._turretBtns = [...document.querySelectorAll('#build-panel .turret-btn')];
     this._bpGold = document.getElementById('bp-gold');
-    this._bpPop  = document.getElementById('bp-pop');
-    this._bpGarrison = document.getElementById('bp-garrison');
     this._mineBtn  = document.getElementById('mine-btn');
     this._mineCost = document.getElementById('mine-cost');
     this._mineLvl  = document.getElementById('mine-lvl');
@@ -223,8 +221,6 @@ export class HUDRenderer {
     this._prevBuildHash = hash;
 
     if (this._bpGold) this._bpGold.textContent = gold;
-    if (this._bpPop)  this._bpPop.textContent  = `${pop}/${cap}`;
-    if (this._bpGarrison) this._bpGarrison.textContent = `${base.garrison}/15`;
 
     // Mining upgrade button
     if (this._mineBtn) {
@@ -308,12 +304,31 @@ export class HUDRenderer {
     this._prevLbHash = hash;
 
     const fmt = (n) => n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n);
-    this._lbEntries.innerHTML = entries.slice(0, 10).map((e, i) => `
-      <div class="lb-entry ${e.isMe ? 'is-player' : ''}">
-        <span class="lb-rank">${i + 1}</span>
+
+    // Everyone keeps their TRUE rank, so the numbers still mean something once
+    // the player is pinned in below.
+    const ranked = entries.map((e, i) => ({ ...e, rank: i + 1 }));
+
+    // You are always on your own leaderboard.
+    //
+    // It used to be a flat slice(0, 10): rank 11th and you simply vanished,
+    // which is the moment the board matters most — you are losing and want to
+    // know by how much. Show the top nine and pin your own row underneath,
+    // marked with a divider so the jump in rank is obvious.
+    const TOP = 10;
+    let rows = ranked.slice(0, TOP);
+    const mine = ranked.find(e => e.isMe);
+    if (mine && !rows.includes(mine)) {
+      rows = ranked.slice(0, TOP - 1);
+      rows.push({ ...mine, gap: true });
+    }
+
+    this._lbEntries.innerHTML = rows.map(e => `
+      <div class="lb-entry ${e.isMe ? 'is-player' : ''} ${e.gap ? 'lb-gap' : ''}">
+        <span class="lb-rank">${e.rank}</span>
         <span class="lb-dot" style="background:${hexToCSS(e.color)}"></span>
         <span class="lb-name">${e.name}</span>
-        <span class="lb-score">${fmt(e.score)} XP</span>
+        <span class="lb-score">${fmt(e.score)}</span>
       </div>
     `).join('');
   }
@@ -335,7 +350,13 @@ export class HUDRenderer {
    */
   _updateMinimap(state, cam) {
     // Collapsed → nothing is visible, so do nothing at all.
-    if (this._mmWrap?.classList.contains('collapsed')) return;
+    // Ask the LAYOUT whether the canvas is on screen, rather than reading the
+    // `collapsed` class. On a phone the minimap is forced visible by CSS while
+    // still carrying that class — it has no room for a handle to toggle — so a
+    // class check would silently skip drawing exactly where the minimap matters
+    // most. offsetParent is null whenever an ancestor is display:none, which is
+    // the question actually being asked.
+    if (!this._mmCanvas?.offsetParent) return;
 
     const ctx = this._mmCtx;
     const W = this._mmCanvas.width;
@@ -364,12 +385,22 @@ export class HUDRenderer {
       ctx.fill();
     }
 
-    // Your squads.
+    // Your squads — a WHITE dot with a status-coloured ring.
+    //
+    // They used to be filled with STATUS_COLOR alone, and idle is #7b8fa1
+    // grey on a #08081a near-black background: effectively invisible, which is
+    // why the map looked empty in a quiet moment. White reads at any size
+    // against this background; the ring keeps the status information that the
+    // colour was carrying.
     for (const g of state.groupsOf(state.playerId)) {
-      ctx.fillStyle = STATUS_COLOR[g.status];
+      const gx = g.anchor.x * scale, gy = g.anchor.y * scale;
       ctx.beginPath();
-      ctx.arc(g.anchor.x * scale, g.anchor.y * scale, 2.5, 0, Math.PI * 2);
+      ctx.arc(gx, gy, 3, 0, Math.PI * 2);
+      ctx.fillStyle = '#ffffff';
       ctx.fill();
+      ctx.strokeStyle = STATUS_COLOR[g.status] ?? '#ffffff';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
     }
 
     // Your base.

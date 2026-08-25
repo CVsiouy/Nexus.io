@@ -180,19 +180,54 @@ export class GameRenderer {
       cam.height / 2 - cam.y * cam.zoom,
     );
     this.worldContainer.scale.set(cam.zoom);
+    // Keep the grid at a constant SCREEN width. Cheap: no-ops unless zoom
+    // actually changed, which without a pinch gesture is rare.
+    this._drawBackground(cam.zoom);
   }
 
   // ── Background ──────────────────────────────────────────────────────────────
-  _drawBackground() {
+  /**
+   * The world grid.
+   *
+   * WHY THE LINE WIDTH IS DIVIDED BY ZOOM
+   *
+   * This Graphics lives inside `worldContainer`, which is scaled by `cam.zoom`
+   * every frame. So a line declared as 1 WORLD unit wide is only 1 screen pixel
+   * when zoom happens to be 1 — at a phone's play zoom of ~0.54 it is half a
+   * pixel, and at the pre-fix 0.3 it was under a third of one.
+   *
+   * Sub-pixel lines are a coin toss. With multisampling they render as a faint
+   * but CONTINUOUS line; without it, coverage is a binary test against the pixel
+   * centre, so some grid lines land on a centre and draw at full strength while
+   * their neighbours miss and vanish entirely. Worse, `worldContainer.position`
+   * moves in fractional pixels as the camera pans, so WHICH lines survive
+   * changes every frame — the grid visibly shimmers and pops.
+   *
+   * Dividing by zoom pins the line to ~1 screen pixel at any zoom, which is both
+   * what it always looked like on desktop and immune to the rasteriser's
+   * settings. Same trick the name labels already use (`label.scale.set(1/zoom)`
+   * in _drawSoldiers).
+   *
+   * Cost is nil: there is no pinch gesture, so zoom only changes on fit() and
+   * orientation change. `_gridZoom` skips the redraw otherwise.
+   */
+  _drawBackground(zoom = 1) {
+    if (this._gridZoom === zoom) return;
+    this._gridZoom = zoom;
+
     const g = this._bg;
     const W = WORLD_SIZE;
+    g.clear();
     g.beginFill(BG_COLOR, 1);
     g.drawRect(0, 0, W, W);
     g.endFill();
-    g.lineStyle(1, GRID_COLOR, 1);
+
+    const px = 1 / zoom;                 // one screen pixel, in world units
+    g.lineStyle(px, GRID_COLOR, 1);
     for (let y = 0; y <= W; y += GRID_SIZE) { g.moveTo(0, y); g.lineTo(W, y); }
     for (let x = 0; x <= W; x += GRID_SIZE) { g.moveTo(x, 0); g.lineTo(x, W); }
-    g.lineStyle(4, 0xaaaaaa, 1);
+
+    g.lineStyle(px * 4, 0xaaaaaa, 1);    // world border, 4 screen px
     g.drawRect(0, 0, W, W);
   }
 

@@ -15,7 +15,7 @@ import { WorldView } from './net/WorldView.js';
 import { Selection } from './Selection.js';
 import { InputSystem } from './input/InputSystem.js';
 import { CameraController, FIT_PLAY, FIT_ATTRACT } from './input/CameraController.js';
-import { touchLikely, installTouchClass } from './input/touchDetect.js';
+import { installTouchClass } from './input/touchDetect.js';
 import { Joystick } from './input/Joystick.js';
 import { readQuality, qualityOpts } from './quality.js';
 import { GameRenderer } from './renderer/GameRenderer.js';
@@ -67,9 +67,11 @@ export class Game {
   }
 
   /**
-   * Change quality at runtime. Resolution takes effect immediately; antialias
-   * cannot, because changing it would mean tearing down and rebuilding the
-   * WebGL context (and with it every texture). The menu says so.
+   * Change quality at runtime.
+   *
+   * Only resolution differs between the two profiles now (see quality.js), and
+   * resolution CAN be changed on a live renderer — so unlike before, the switch
+   * takes full effect immediately and the menu no longer has to caveat itself.
    */
   applyQuality(q) {
     const opts = qualityOpts(q);
@@ -115,7 +117,9 @@ export class Game {
       (cmd) => this._send(cmd),
     );
 
-    this._cameraCtl = new CameraController(this._camera, { touch: touchLikely });
+    // No `touch` option: the controller asks live at fit() time. Passing a
+    // flag captured here is what caused the zoom regression.
+    this._cameraCtl = new CameraController(this._camera);
     this._input.setCameraController(this._cameraCtl);
 
     // Marks <body> so the CSS can switch to touch sizing, and keeps watching:
@@ -256,23 +260,13 @@ export class Game {
     // Squad commands. Buttons mirror the keyboard rather than replacing it —
     // on a phone they are the ONLY way to reach these, and on desktop they are
     // how a new player discovers the shortcut exists.
+    //
+    // Split / Merge / Even / Ping / Clear were removed. Deselecting still has
+    // two routes (Escape, and a two-finger tap on touch); the other four are
+    // gone from the client entirely.
     this._wireBtn('cmd-defend',  () => this._input.doDefend());
     this._wireBtn('cmd-base',    () => this._input.focusBase());
     this._wireBtn('cmd-release', () => this._send({ t: 'release' }));
-    this._wireBtn('cmd-split',   () => this._input.doSplit());
-    this._wireBtn('cmd-merge',   () => this._input.doMerge());
-    this._wireBtn('cmd-balance', () => this._input.doBalance());
-    this._wireBtn('cmd-clear',   () => this._input.unselect());
-
-    // Ping is two-step on touch: arm it here, then the next map tap places it.
-    // A long-press would be the obvious alternative, but that is already
-    // box-select, and one gesture cannot mean two things.
-    this._wireBtn('cmd-ping', () => {
-      const btn = document.getElementById('cmd-ping');
-      const armed = this._input.pingArmed;
-      this._input.armPing(armed ? null : 'attack');
-      btn?.classList.toggle('armed', !armed);
-    });
 
     // Minimap close. Opening is handled by the shared .collapsible handler in
     // main.js; this is the ✕ inside the panel body.
