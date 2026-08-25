@@ -513,7 +513,7 @@ export class GameRenderer {
     g.drawCircle(x, y, sz * 2.2 * pulse);
     g.lineStyle(4, 0x886600, 1);
     g.beginFill(0xd4a017, 1);
-    this._drawStar(g, x, y, sz * 1.5, sz * 0.7);
+    this._drawBossGem(g, x, y, sz * 1.5);
     g.endFill();
     g.lineStyle(0);
 
@@ -534,6 +534,35 @@ export class GameRenderer {
       pts.push(cx + Math.cos(a) * r, cy + Math.sin(a) * r);
     }
     g.drawPolygon(pts);
+  }
+
+  /**
+   * The boss: a diamond with its sides pulled in.
+   *
+   * Four points rather than five, and deliberately NOT a regular diamond —
+   * the horizontal spikes run longer than the vertical ones and the waist is
+   * tucked in, which gives it a cut-gem silhouette that reads as an object
+   * rather than a unit. A five-pointed star looked like a rating, and a plain
+   * diamond looked like a pickup.
+   *
+   * The proportions are lifted from the boss illustration in the tutorial, so
+   * the thing you are taught to look for is the thing you see on the map.
+   */
+  _drawBossGem(g, cx, cy, r) {
+    const ax = r * 1.33;      // horizontal reach — the long axis
+    const ay = r;             // vertical reach
+    const wx = r * 0.44;      // waist, where the sides tuck in
+    const wy = r * 0.22;
+    g.drawPolygon([
+      cx,      cy - ay,       // top point
+      cx + wx, cy - wy,
+      cx + ax, cy,            // right point
+      cx + wx, cy + wy,
+      cx,      cy + ay,       // bottom point
+      cx - wx, cy + wy,
+      cx - ax, cy,            // left point
+      cx - wx, cy - wy,
+    ]);
   }
 
   // ── Soldiers ───────────────────────────────────────────────────────────────
