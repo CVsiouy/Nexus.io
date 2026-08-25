@@ -30,7 +30,17 @@ COPY apps/server/package.json       apps/server/package.json
 # `npm ci` installs exactly what the lockfile says — reproducible, unlike
 # `npm install` which may quietly resolve to newer versions.
 # --omit=dev leaves out test tooling and the client's build deps.
-RUN npm ci --omit=dev --workspace @basewar/server --include-workspace-root \
+# Every workspace the server imports at runtime must be named here. Listing
+# only @basewar/server links only that one package, leaving @basewar/sim and
+# @basewar/protocol absent from node_modules — the server then dies at startup
+# with ERR_MODULE_NOT_FOUND. That was latent for a long time: a dirty lockfile
+# made `npm ci` fail, and the `npm install` fallback below happens to link every
+# workspace, so the bug only appeared the day the lockfile became clean.
+RUN npm ci --omit=dev \
+      --workspace @basewar/server \
+      --workspace @basewar/sim \
+      --workspace @basewar/protocol \
+      --include-workspace-root \
  || npm install --omit=dev
 
 # Only what the server actually needs.
