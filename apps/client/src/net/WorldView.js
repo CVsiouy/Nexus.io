@@ -1,4 +1,4 @@
-import { POP_BASE, POP_PER_LEVEL, SOLDIER_DEFS } from '@nexus/sim';
+import { POP_BASE, POP_PER_LEVEL, SOLDIER_DEFS } from '@basewar/sim';
 
 /**
  * WorldView — the client's picture of the world.

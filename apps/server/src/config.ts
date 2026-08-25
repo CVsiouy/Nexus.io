@@ -33,7 +33,7 @@ export const config = {
    * frontend domain — otherwise someone can host a copy of the client on their
    * own site and point it at your servers, and you pay the bandwidth for it.
    *
-   * Comma-separated, e.g. "https://nexus.io,https://www.nexus.io"
+   * Comma-separated, e.g. "https://basewar.io,https://www.basewar.io"
    */
   allowedOrigins: str('ALLOWED_ORIGINS', '')
     .split(',').map(s => s.trim()).filter(Boolean),

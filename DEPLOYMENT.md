@@ -1,6 +1,6 @@
 # Going Live — step by step
 
-This is the runbook for putting Nexus.io on the internet. Everything technical
+This is the runbook for putting BaseWar.io on the internet. Everything technical
 is already built; what remains needs **your** accounts, a domain, and one
 decision. Follow it in order.
 
@@ -94,8 +94,8 @@ Create a non-root user to run the game. Running internet-facing services as
 root means any compromise is a total compromise:
 
 ```bash
-adduser --disabled-password --gecos "" nexus
-usermod -aG docker nexus
+adduser --disabled-password --gecos "" basewar
+usermod -aG docker basewar
 ```
 
 Basic firewall — only HTTP, HTTPS and SSH reach the machine. The game server
@@ -110,8 +110,8 @@ ufw --force enable
 Get the code:
 
 ```bash
-su - nexus
-git clone YOUR_REPO_URL nexus && cd nexus
+su - basewar
+git clone YOUR_REPO_URL basewar && cd basewar
 ```
 
 ---
@@ -149,7 +149,7 @@ Every `git push` now rebuilds and redeploys the frontend automatically, free.
 
 ## Step 4 — Backend on your server
 
-Back in the SSH session, as the `nexus` user:
+Back in the SSH session, as the `basewar` user:
 
 ```bash
 cp infra/.env.example infra/.env
@@ -207,7 +207,7 @@ human players.
 exposes internals. Read it over an SSH tunnel:
 
 ```bash
-ssh -L 9000:localhost:2567 nexus@YOUR_SERVER_IP
+ssh -L 9000:localhost:2567 basewar@YOUR_SERVER_IP
 # then, locally:
 curl localhost:9000/metrics
 ```
@@ -224,12 +224,12 @@ curl localhost:9000/metrics
 
 | Metric | Watch for | Why |
 |---|---|---|
-| `nexus_tick_duration_ms` p99 | **alert above 25ms** | The single most important number. The budget is 50ms; at 25 you are out of headroom and matches are about to run slow. |
-| `nexus_room_errors_total` | **alert on any increase** | Should be exactly zero. Anything else is a bug corrupting live matches. |
-| `nexus_players_connected` | growth, and sudden drops | A cliff means people are being disconnected. |
-| `nexus_snapshot_bytes_total` | rate per player | Your bandwidth bill, live. Should sit near 6.5 KB/s/player. |
-| `nexus_commands_total{result="malformed"}` | sudden spikes | Either a released client has a bug, or somebody is probing you. |
-| `nexus_node_nodejs_heap_size_used_bytes` | steady upward drift | A memory leak. |
+| `basewar_tick_duration_ms` p99 | **alert above 25ms** | The single most important number. The budget is 50ms; at 25 you are out of headroom and matches are about to run slow. |
+| `basewar_room_errors_total` | **alert on any increase** | Should be exactly zero. Anything else is a bug corrupting live matches. |
+| `basewar_players_connected` | growth, and sudden drops | A cliff means people are being disconnected. |
+| `basewar_snapshot_bytes_total` | rate per player | Your bandwidth bill, live. Should sit near 6.5 KB/s/player. |
+| `basewar_commands_total{result="malformed"}` | sudden spikes | Either a released client has a bug, or somebody is probing you. |
+| `basewar_node_nodejs_heap_size_used_bytes` | steady upward drift | A memory leak. |
 
 ### Error reporting
 
@@ -267,8 +267,8 @@ time limit for free.
 
 Not yet. One box handles far more than the launch target. Add capacity when:
 
-- `nexus_tick_duration_ms` p99 approaches 25ms, **or**
-- `nexus_players_connected` regularly exceeds ~1,500, **or**
+- `basewar_tick_duration_ms` p99 approaches 25ms, **or**
+- `basewar_players_connected` regularly exceeds ~1,500, **or**
 - the machine's network is saturating
 
 That's Phase 5 (Redis-backed matchmaking across machines). Until one of those

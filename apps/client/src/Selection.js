@@ -23,6 +23,15 @@ export class Selection {
   clear() { this._ids.clear(); }
   add(groupId) { this._ids.add(groupId); }
 
+  /**
+   * Drop ONE squad from the selection, leaving the rest.
+   *
+   * Needed by touch, which has no modifier key: tapping an already-selected
+   * squad toggles it off. Without this, the only way to correct a mis-tap on a
+   * phone is to clear everything and start again.
+   */
+  delete(groupId) { return this._ids.delete(groupId); }
+
   only(groupId) {
     this._ids.clear();
     if (groupId != null) this._ids.add(groupId);

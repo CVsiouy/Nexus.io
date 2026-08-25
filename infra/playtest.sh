@@ -94,10 +94,10 @@ banner() {
   Also saved to:  data/playtest-link.txt
 
   Watch the game live — in a SECOND terminal, not this one:
-    ./nexus.sh logs
+    ./basewar.sh logs
 
   After the session:
-    ./nexus.sh analyse
+    ./basewar.sh analyse
 
 EOF
 }
@@ -109,7 +109,7 @@ printf '    Closing it, or pressing Ctrl-C, ends the session for everyone.\n\n'
 
 # Stay alive so the tunnels stay up. Deliberately NOT streaming server logs:
 # they scroll the share link off the screen within seconds and make it look
-# like the script has hung. Use `./nexus.sh logs` in another terminal instead.
+# like the script has hung. Use `./basewar.sh logs` in another terminal instead.
 #
 # Re-prints the link every few minutes so it is always visible, and checks the
 # tunnel is still healthy rather than silently sitting on a dead address.
@@ -120,10 +120,10 @@ while true; do
 
   if ! curl -fsS --max-time 15 "$SERVER_URL/health" >/dev/null 2>&1; then
     printf '\033[1;33m  ! %sm — the game server is not answering through its tunnel.\033[0m\n' "$mins"
-    printf '    Check: ./nexus.sh logs\n'
+    printf '    Check: ./basewar.sh logs\n'
   elif [ $((mins % 5)) -eq 0 ]; then
     banner
-    printf '\033[1;32m  ● Still live (%sm). Players joined so far are in ./nexus.sh logs\033[0m\n\n' "$mins"
+    printf '\033[1;32m  ● Still live (%sm). Players joined so far are in ./basewar.sh logs\033[0m\n\n' "$mins"
   else
     printf '  ● %sm — live · %s\n' "$mins" "$CLIENT_URL"
   fi

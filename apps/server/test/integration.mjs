@@ -9,7 +9,7 @@
  */
 import assert from 'node:assert/strict';
 import { Client } from 'colyseus.js';
-import { decodeSnapshot } from '@nexus/protocol';
+import { decodeSnapshot } from '@basewar/protocol';
 
 const URL = process.env.SERVER_URL || 'ws://localhost:2567';
 const PROTOCOL = 1;

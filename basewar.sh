@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 #
-# nexus — one command for everything.
+# basewar — one command for everything.
 #
-#   ./nexus.sh help
+#   ./basewar.sh help
 #
 # Every task in this project runs inside Docker, and several of the commands are
 # long and easy to get subtly wrong. This wraps all of them, and handles the
@@ -37,17 +37,17 @@ die() { printf '\n\033[1;31m✗ %s\033[0m\n\n' "$1" >&2; exit 1; }
 
 server_up() { $DC ps --format '{{.Service}} {{.State}}' 2>/dev/null | grep -q '^server running$'; }
 need_server() {
-  server_up || die "The server isn't running. Start it first:  ./nexus.sh dev"
+  server_up || die "The server isn't running. Start it first:  ./basewar.sh dev"
 }
 
 usage() {
-  # PowerShell users invoke this through nexus.ps1, which sets NEXUS_CMD.
-  # Printing "./nexus.sh" to them would be a command that silently does nothing
+  # PowerShell users invoke this through basewar.ps1, which sets BASEWAR_CMD.
+  # Printing "./basewar.sh" to them would be a command that silently does nothing
   # in their shell — which is exactly the confusion this wrapper exists to fix.
-  local me="${NEXUS_CMD:-./nexus.sh}"
+  local me="${BASEWAR_CMD:-./basewar.sh}"
   cat <<EOF
 
-  nexus — project commands
+  basewar — project commands
 
   EVERYDAY
     $me dev              Start the game locally  → http://localhost:5173
@@ -95,7 +95,7 @@ case "$cmd" in
     ok "running"
     printf '\n  Play      http://localhost:5173\n'
     printf '  Backend   http://localhost:2567/health\n'
-    printf '  Logs      ./nexus.sh logs\n\n'
+    printf '  Logs      ./basewar.sh logs\n\n'
     ;;
 
   stop|down)
@@ -144,7 +144,7 @@ case "$cmd" in
     exec bash ./infra/playtest.sh ;;
 
   analyse|analyze)
-    [ -f data/matches.jsonl ] || die "No match data yet. Run ./nexus.sh playtest and finish a match."
+    [ -f data/matches.jsonl ] || die "No match data yet. Run ./basewar.sh playtest and finish a match."
     $DC_PLAY run --rm -T server node ../loadtest/src/analyse.mjs
     ;;
 
@@ -153,11 +153,11 @@ case "$cmd" in
   prod:logs)  $DC_PROD logs -f "${1:-server}" ;;
 
   health)
-    curl -s http://localhost:2567/health && echo || die "No response. Is it running? ./nexus.sh dev" ;;
+    curl -s http://localhost:2567/health && echo || die "No response. Is it running? ./basewar.sh dev" ;;
 
   metrics)
-    curl -s http://localhost:2567/metrics | grep -E '^nexus_(rooms|players|bots|commands|joins|room_errors|snapshot|matches)' \
-      || die "No response. Is it running? ./nexus.sh dev" ;;
+    curl -s http://localhost:2567/metrics | grep -E '^basewar_(rooms|players|bots|commands|joins|room_errors|snapshot|matches)' \
+      || die "No response. Is it running? ./basewar.sh dev" ;;
 
   # ── Recovery ─────────────────────────────────────────────────────────────
   reset)
@@ -175,7 +175,7 @@ case "$cmd" in
     say "Clearing Docker build cache too (slower next build, fixes weird errors)"
     $DC down -v --remove-orphans || true
     docker builder prune -af
-    ok "cleaned — run ./nexus.sh dev next"
+    ok "cleaned — run ./basewar.sh dev next"
     ;;
 
   help|--help|-h) usage ;;

@@ -1,4 +1,4 @@
-﻿# Nexus.io — Network Conquest
+﻿# BaseWar.io — Network Conquest
 
 > **Grow your network. Sever their links. Destroy their base. Last network standing wins.**
 
@@ -30,7 +30,7 @@ A browser-based real-time strategy game built with **PixiJS + Vite**, containeri
 
 ## Game Overview
 
-Nexus.io is a **single-player vs 10 AI bots** real-time strategy game set on a 6000x6000 world map.
+BaseWar.io is a **single-player vs 10 AI bots** real-time strategy game set on a 6000x6000 world map.
 
 Each player controls a **Base** (gear-shaped structure) and spawns **Soldiers** automatically over time. The goal is to expand a network of **Nodes** connected by **Links** across the map, while destroying enemy networks by severing their links.
 
@@ -225,7 +225,7 @@ This is a **pure client-side Entity-Component-like architecture**:
 ## Codebase Structure
 
 ```
-Nexus.io/
+BaseWar.io/
 ├── Dockerfile               # Node 20 + Vite dev server
 ├── docker-compose.yml       # Single service: nodus (port 5173)
 ├── package.json             # Vite + PixiJS dependencies
@@ -459,7 +459,7 @@ Colyseus.js / Socket.io (Node.js server)
 
 ### Start the game
 ```bash
-cd "Nexus.io"
+cd "BaseWar.io"
 
 # First run (downloads Node 20 image, installs deps)
 docker compose up --build
@@ -552,7 +552,8 @@ All values in `src/game/constants.js`:
 
 | Name        | Rationale                                          |
 |-------------|----------------------------------------------------|
-| **Nexus.io**   | Nexus = network hub (current name)              |
+| **BaseWar.io** | War over mother bases — the actual game (CURRENT NAME) |
+| ~~Nexus.io~~   | Nexus = network hub. Dropped: domain unavailable      |
 | **Sevra.io**   | From "sever" — cutting links is the core move  |
 | **Grida.io**   | Grid network, clean and punchy                 |
 | **Plexo.io**   | Plexus = complex interconnected network        |

@@ -1,4 +1,4 @@
-import { Simulation, TICK_MS } from '@nexus/sim';
+import { Simulation, TICK_MS } from '@basewar/sim';
 
 /**
  * The single-player game server — running inside the player's own browser.

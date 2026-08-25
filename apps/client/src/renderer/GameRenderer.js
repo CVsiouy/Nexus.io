@@ -2,7 +2,7 @@ import * as PIXI from 'pixi.js';
 import {
   WORLD_SIZE, TURRET_DEFS, WALL_CELL_SIZE, EATABLE_DEFS,
   MINE_NODE_RADIUS, BASE_DEFENSE_RADIUS, cellPositions,
-} from '@nexus/sim';
+} from '@basewar/sim';
 
 const GEAR_TEETH = 8;
 const GRID_SIZE  = 50;

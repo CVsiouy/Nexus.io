@@ -1,5 +1,5 @@
 /**
- * @nexus/sim — the rules engine.
+ * @basewar/sim — the rules engine.
  *
  * Pure game logic. No PixiJS, no DOM, no browser APIs of any kind, so the exact
  * same code runs in a browser Web Worker (single-player practice) and on the

@@ -6,7 +6,7 @@
  *
  * Run:  node apps/loadtest/src/diagnose.mjs
  */
-import { Simulation, TICK_MS, GROUP_MAX_SIZE, POP_BASE, POP_PER_LEVEL } from '@nexus/sim';
+import { Simulation, TICK_MS, GROUP_MAX_SIZE, POP_BASE, POP_PER_LEVEL } from '@basewar/sim';
 
 const quiet = { error: () => {}, warn: () => {}, log: () => {} };
 const LIMIT = 20 * 60 * 1000;

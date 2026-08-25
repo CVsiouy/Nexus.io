@@ -43,7 +43,7 @@ services:
     build:
       context: .
       dockerfile: infra/server.prod.Dockerfile
-    image: nexus-server:${TAG:-latest}
+    image: basewar-server:${TAG:-latest}
     restart: unless-stopped
     expose:
       - "2567"

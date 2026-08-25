@@ -1,12 +1,12 @@
 import * as PIXI from 'pixi.js';
 
-import { WORLD_SIZE } from '@nexus/sim';
+import { WORLD_SIZE } from '@basewar/sim';
 import { WorkerConnection, WebSocketConnection } from './net/Connection.js';
 import { isTypingInto } from './dom.js';
 
 /**
  * Where the backend lives. Set by docker-compose in development; in production
- * this becomes a real address like wss://eu1.nexus.io — the frontend is served
+ * this becomes a real address like wss://eu1.basewar.io — the frontend is served
  * from a CDN and the backend from game machines, so this is genuinely a
  * different host, not just a different port.
  */
@@ -14,6 +14,10 @@ const SERVER_URL = import.meta.env?.VITE_SERVER_URL ?? 'ws://localhost:2567';
 import { WorldView } from './net/WorldView.js';
 import { Selection } from './Selection.js';
 import { InputSystem } from './input/InputSystem.js';
+import { CameraController, FIT_PLAY, FIT_ATTRACT } from './input/CameraController.js';
+import { touchLikely, installTouchClass } from './input/touchDetect.js';
+import { Joystick } from './input/Joystick.js';
+import { readQuality, qualityOpts } from './quality.js';
 import { GameRenderer } from './renderer/GameRenderer.js';
 import { HUDRenderer } from './renderer/HUDRenderer.js';
 
@@ -62,13 +66,31 @@ export class Game {
     this._pings = [];
   }
 
+  /**
+   * Change quality at runtime. Resolution takes effect immediately; antialias
+   * cannot, because changing it would mean tearing down and rebuilding the
+   * WebGL context (and with it every texture). The menu says so.
+   */
+  applyQuality(q) {
+    const opts = qualityOpts(q);
+    const r = this._app?.renderer;
+    if (!r) return;
+    r.resolution = opts.resolution;
+    r.resize(window.innerWidth, window.innerHeight);
+    this._input?.invalidateCanvasRect();
+  }
+
   async init() {
+    // Quality is read once, here, because antialias is fixed at WebGL context
+    // creation. A phone reporting devicePixelRatio 3 would otherwise render at
+    // 2x WITH multisampling, which is most of a mid-range mobile GPU budget.
+    const q = qualityOpts(readQuality());
     this._app = new PIXI.Application({
       width: window.innerWidth,
       height: window.innerHeight,
       backgroundColor: 0xf4f4f4,
-      antialias: true,
-      resolution: Math.min(window.devicePixelRatio || 1, 2),
+      antialias: q.antialias,
+      resolution: q.resolution,
       autoDensity: true,
     });
     document.getElementById('app').appendChild(this._app.view);
@@ -93,15 +115,63 @@ export class Game {
       (cmd) => this._send(cmd),
     );
 
+    this._cameraCtl = new CameraController(this._camera, { touch: touchLikely });
+    this._input.setCameraController(this._cameraCtl);
+
+    // Marks <body> so the CSS can switch to touch sizing, and keeps watching:
+    // classes are only ever added, so a hybrid device that has been touched
+    // once keeps its large targets even when the mouse is picked back up.
+    installTouchClass();
+
+    // The stick feeds the same pan path as WASD rather than moving the camera
+    // itself — see InputSystem.update.
+    const stickEl = document.getElementById('joystick');
+    if (stickEl) new Joystick(stickEl, (x, y) => this._input.setStick(x, y));
+
     this._wireUI();
 
-    window.addEventListener('resize', () => {
-      this._app.renderer.resize(window.innerWidth, window.innerHeight);
-      this._camera.width = window.innerWidth;
-      this._camera.height = window.innerHeight;
-      // The menu demo is deliberately zoomed in; in play the whole map fits.
-      this._camera.zoom = (this._camera.width / WORLD_SIZE) * (this._attract ? 1.7 : 0.98);
-    });
+    /*
+     * Viewport changes.
+     *
+     * This used to recompute zoom from scratch on every event, which on a phone
+     * meant the view jumped every time the URL bar slid in or out. Now the
+     * controller only re-clamps into the new allowed range — see
+     * CameraController.onViewportResize.
+     *
+     * rAF-coalesced because iOS fires resize in bursts during chrome
+     * transitions, and we would otherwise resize the renderer a dozen times per
+     * gesture.
+     *
+     * NOTE: no `orientationchange` listener, deliberately. On iOS it fires
+     * BEFORE the new dimensions are readable, so it reports stale values.
+     * `resize` fires afterwards with correct ones, and the controller derives
+     * orientation from width >= height itself.
+     */
+    let resizeQueued = false;
+    const applyResize = () => {
+      resizeQueued = false;
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+
+      // An on-screen keyboard shrinks the visual viewport dramatically. Treat
+      // that as "a text field is open", not as a real layout change — resizing
+      // the canvas to the keyboard-reduced height and back is both expensive
+      // and visibly ugly.
+      const vv = window.visualViewport;
+      if (vv && vv.height < h * 0.75) return;
+
+      this._app.renderer.resize(w, h);
+      this._cameraCtl.onViewportResize(w, h);
+      this._input.invalidateCanvasRect();
+    };
+    const queueResize = () => {
+      if (resizeQueued) return;
+      resizeQueued = true;
+      requestAnimationFrame(applyResize);
+    };
+
+    window.addEventListener('resize', queueResize);
+    window.visualViewport?.addEventListener('resize', queueResize);
   }
 
   // ── Sending orders ─────────────────────────────────────────────────────────
@@ -127,7 +197,7 @@ export class Game {
       this._world.setLocalId(msg.youAre);
       this._seat = msg.seat;
       this._matchId = msg.matchId ?? null;
-      console.info(`[nexus] you are ${msg.youAre} (seat ${msg.seat + 1}) in a ${msg.mode} match`);
+      console.info(`[basewar] you are ${msg.youAre} (seat ${msg.seat + 1}) in a ${msg.mode} match`);
     });
 
     // Sent whenever anyone joins or leaves, so a new player's name appears at
@@ -183,10 +253,33 @@ export class Game {
       row.addEventListener('click', () => this._send({ t: 'skill', stat: row.dataset.buff }));
     });
 
-    // Squad commands
+    // Squad commands. Buttons mirror the keyboard rather than replacing it —
+    // on a phone they are the ONLY way to reach these, and on desktop they are
+    // how a new player discovers the shortcut exists.
     this._wireBtn('cmd-defend',  () => this._input.doDefend());
     this._wireBtn('cmd-base',    () => this._input.focusBase());
     this._wireBtn('cmd-release', () => this._send({ t: 'release' }));
+    this._wireBtn('cmd-split',   () => this._input.doSplit());
+    this._wireBtn('cmd-merge',   () => this._input.doMerge());
+    this._wireBtn('cmd-balance', () => this._input.doBalance());
+    this._wireBtn('cmd-clear',   () => this._input.unselect());
+
+    // Ping is two-step on touch: arm it here, then the next map tap places it.
+    // A long-press would be the obvious alternative, but that is already
+    // box-select, and one gesture cannot mean two things.
+    this._wireBtn('cmd-ping', () => {
+      const btn = document.getElementById('cmd-ping');
+      const armed = this._input.pingArmed;
+      this._input.armPing(armed ? null : 'attack');
+      btn?.classList.toggle('armed', !armed);
+    });
+
+    // Minimap close. Opening is handled by the shared .collapsible handler in
+    // main.js; this is the ✕ inside the panel body.
+    document.getElementById('minimap-close')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      document.getElementById('minimap-wrap')?.classList.add('collapsed');
+    });
 
     // Clicking a squad in the left panel focuses it. DOM dataset values are
     // always strings, and squad ids are numbers now — hence the Number().
@@ -204,9 +297,18 @@ export class Game {
     window.addEventListener('keydown', e => {
       if (isTypingInto(e)) return;   // R must not release the garrison mid-name
       if (!this._running || this._gameOver) return;
+      // Escape is CONTEXTUAL, and this is the only place it is handled.
+      //
+      // It previously fired here AND in InputSystem's own switch, so one press
+      // both dropped your selection and opened the pause menu. Now it does the
+      // less destructive thing first: back out of the selection if there is
+      // one, and only pause when there is nothing to back out of. That matches
+      // what Escape means everywhere else — "undo the current mode".
       if (e.code === 'Escape') {
         const specOpen = document.getElementById('spec-modal').classList.contains('vis');
-        if (!specOpen) this.togglePause();
+        if (specOpen) return;                      // the spec modal owns Escape
+        if (this._input?.hasSelection()) this._input.unselect();
+        else this.togglePause();
       }
       if (e.code === 'KeyR') this._send({ t: 'release' });
     });
@@ -243,7 +345,7 @@ export class Game {
     cam.y = WORLD_SIZE / 2;
     // Closer than the in-game view: the point is to see soldiers moving and
     // fighting, not to read the whole map at once.
-    cam.zoom = (cam.width / WORLD_SIZE) * 1.7;
+    this._cameraCtl.fit(FIT_ATTRACT);
 
     this._attractTarget = { x: cam.x, y: cam.y };
     this._attractUntil = 0;
@@ -373,7 +475,7 @@ export class Game {
     cam.focusId = null;
     cam.x = WORLD_SIZE / 2;
     cam.y = WORLD_SIZE / 2;
-    cam.zoom = (cam.width / WORLD_SIZE) * 0.98;
+    this._cameraCtl.fit(FIT_PLAY);
 
     // Reveals the HUD, which is hidden by CSS until this class is present.
     document.body.classList.add('playing');
@@ -417,6 +519,7 @@ export class Game {
     this._hud.update(world, this._selection, {
       online: this._online,
       ping: this._conn?.ping ?? 0,
+      camera: this._camera,
     });
 
     this._checkGameOver();
@@ -566,7 +669,7 @@ export class Game {
       } catch (err) {
         // Never let a failed submission spoil the moment; it is not important
         // enough to show the player an error.
-        console.debug('[nexus] feedback not sent:', err);
+        console.debug('[basewar] feedback not sent:', err);
       }
       panel.classList.add('sent');
     });
@@ -641,7 +744,7 @@ export class Game {
   _setConnectionStatus(state, detail) {
     if (state === 'error' || state === 'disconnected') {
       this._lastConnError = detail;
-      console.error('[nexus] connection', state, detail ?? '');
+      console.error('[basewar] connection', state, detail ?? '');
       // Failing before the match started is handled by startMatch's return
       // value, which puts the message on the intro screen.
       if (!this._running) return;
@@ -656,7 +759,7 @@ export class Game {
         document.getElementById('gameover').classList.add('vis');
       }
     } else {
-      console.info('[nexus] connection', state);
+      console.info('[basewar] connection', state);
     }
   }
 

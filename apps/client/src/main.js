@@ -1,5 +1,6 @@
 import { Game } from './Game.js';
 import { isTypingInto } from './dom.js';
+import { readQuality, writeQuality } from './quality.js';
 
 let game = null;
 
@@ -40,16 +41,90 @@ function initCollapsiblePanels() {
   });
 }
 
+
+/**
+ * Panels that should start CLOSED on a phone.
+ *
+ * CSS cannot set an element's initial class, so this is the one genuinely
+ * unavoidable line of JS in the responsive work. #build-panel ships expanded
+ * and eats ~90px — 23% of a landscape phone's height — before the player has
+ * touched anything.
+ */
+function collapseForTouch() {
+  if (!window.matchMedia?.('(pointer: coarse) and (max-width: 900px)').matches) return;
+  document.querySelectorAll('[data-touch-collapsed]')
+    .forEach(p => p.classList.add('collapsed'));
+}
+
+/**
+ * The portrait rotate hint auto-dismisses via a CSS animation; this only adds
+ * the "and don't show it again" half.
+ */
+function initRotateHint() {
+  const hint = document.getElementById('rotate-hint');
+  if (!hint) return;
+  try {
+    if (localStorage.getItem('basewar.rotateHint') === 'off') hint.classList.add('dismissed');
+  } catch { /* private browsing — the hint simply reappears */ }
+
+  document.getElementById('rotate-hint-x')?.addEventListener('click', () => {
+    hint.classList.add('dismissed');
+    try { localStorage.setItem('basewar.rotateHint', 'off'); } catch { /* ignore */ }
+  });
+}
+
+/**
+ * The quality control in the menu. The preference itself lives in quality.js,
+ * because Game needs it at construction time.
+ */
+function initQualityToggle(game) {
+  const sel = document.getElementById('quality-select');
+  if (!sel) return;
+  sel.value = readQuality();
+  sel.addEventListener('change', () => {
+    writeQuality(sel.value);
+    game?.applyQuality?.(sel.value);
+  });
+}
+
+/**
+ * Where the remembered player name lives.
+ *
+ * The key moved from `nexus.name` to `basewar.name` with the rename. A hard
+ * switch would have silently wiped the saved name of every returning
+ * playtester, so the old key is read once as a fallback and migrated across —
+ * they never notice the rename happened.
+ */
+const NAME_KEY = 'basewar.name';
+const LEGACY_NAME_KEY = 'nexus.name';
+
+function readSavedName() {
+  try {
+    const current = localStorage.getItem(NAME_KEY);
+    if (current) return current;
+
+    const legacy = localStorage.getItem(LEGACY_NAME_KEY);
+    if (legacy) {
+      localStorage.setItem(NAME_KEY, legacy);
+      localStorage.removeItem(LEGACY_NAME_KEY);
+      return legacy;
+    }
+  } catch { /* private browsing — the player just retypes it */ }
+  return null;
+}
 async function main() {
   game = new Game();
   await game.init();
 
   initCollapsiblePanels();
+  collapseForTouch();
+  initRotateHint();
+  initQualityToggle(game);
 
   // Start a real match playing behind the menu straight away. It runs entirely
   // in this browser, so it costs the server nothing, and it shows a newcomer
   // what the game actually is far faster than any description.
-  game.startAttract().catch(err => console.warn('[nexus] demo match unavailable:', err));
+  game.startAttract().catch(err => console.warn('[basewar] demo match unavailable:', err));
 
   // Show intro, wait for the player to pick a mode.
   const intro  = document.getElementById('intro');
@@ -75,7 +150,7 @@ async function main() {
     // Remember the name so returning players don't retype it. No account, no
     // login wall — a signup form before the first match is the surest way to
     // lose a new player.
-    try { localStorage.setItem('nexus.name', name); } catch {}
+    try { localStorage.setItem(NAME_KEY, name); } catch {}
 
     const btn = document.getElementById('start-online');
     if (btn) { btn.disabled = true; btn.textContent = '🌐 CONNECTING…'; }
@@ -95,7 +170,7 @@ async function main() {
     if (ok) hideIntro();
   };
 
-  const savedName = (() => { try { return localStorage.getItem('nexus.name'); } catch { return null; } })();
+  const savedName = readSavedName();
   const nameInput = document.getElementById('player-name');
   if (nameInput && savedName) nameInput.value = savedName;
 

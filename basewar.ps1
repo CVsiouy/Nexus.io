@@ -1,20 +1,20 @@
-# nexus - PowerShell wrapper.
+# basewar - PowerShell wrapper.
 #
-#   .\nexus.ps1 help
+#   .\basewar.ps1 help
 #
 # WHY THIS FILE EXISTS
 #
-# The project's commands live in nexus.sh, a bash script. PowerShell cannot run
-# .sh files - typing `./nexus.sh dev` in PowerShell makes Windows try to *open*
+# The project's commands live in basewar.sh, a bash script. PowerShell cannot run
+# .sh files - typing `./basewar.sh dev` in PowerShell makes Windows try to *open*
 # the file, which launches your editor and runs nothing. That is confusing
 # precisely because it looks like nothing happened at all.
 #
 # This wrapper finds the bash that ships with Git for Windows and hands the
 # command over, so the same commands work from PowerShell, cmd, or Git Bash.
 #
-#   .\nexus.ps1 dev
-#   .\nexus.ps1 playtest
-#   .\nexus.ps1 test
+#   .\basewar.ps1 dev
+#   .\basewar.ps1 playtest
+#   .\basewar.ps1 test
 #
 # NOTE: this file is deliberately plain ASCII. Windows PowerShell 5.1 reads .ps1
 # files as ANSI unless they carry a byte-order mark, so a stray accented
@@ -60,10 +60,10 @@ if (-not $bash) {
     exit 1
 }
 
-# Tell nexus.sh how this user actually invokes it, so its help text shows
+# Tell basewar.sh how this user actually invokes it, so its help text shows
 # commands that work in PowerShell rather than bash syntax.
-$env:NEXUS_CMD = '.\nexus.ps1'
+$env:BASEWAR_CMD = '.\basewar.ps1'
 
-# Pass every argument straight through to nexus.sh.
-& $bash './nexus.sh' @args
+# Pass every argument straight through to basewar.sh.
+& $bash './basewar.sh' @args
 exit $LASTEXITCODE

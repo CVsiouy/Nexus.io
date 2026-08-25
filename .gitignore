@@ -14,3 +14,4 @@ infra/smoke-screenshot.png
 *.log
 .DS_Store
 data/
+PROJECT_NOTES/

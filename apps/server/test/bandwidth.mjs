@@ -8,7 +8,7 @@
  * Run:  docker compose exec server node test/bandwidth.mjs
  */
 import { Client } from 'colyseus.js';
-import { decodeSnapshot } from '@nexus/protocol';
+import { decodeSnapshot } from '@basewar/protocol';
 
 const URL = process.env.SERVER_URL || 'ws://localhost:2567';
 const WARMUP_SEC = Number(process.env.WARMUP_SEC ?? 90);

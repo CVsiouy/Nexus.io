@@ -15,7 +15,7 @@ import { Registry, Counter, Gauge, Histogram, collectDefaultMetrics } from 'prom
  * that machine — and that shows up here long before a player notices and
  * complains.
  *
- * Everything is prefixed `nexus_` so it can't collide with the default Node
+ * Everything is prefixed `basewar_` so it can't collide with the default Node
  * metrics (heap size, garbage-collection pauses, event-loop lag) that are
  * collected alongside it.
  */
@@ -24,7 +24,7 @@ export const registry = new Registry();
 
 // Node process health: memory, GC pauses, event-loop lag. A memory leak or a
 // GC problem shows up in these first, and they cost nothing to collect.
-collectDefaultMetrics({ register: registry, prefix: 'nexus_node_' });
+collectDefaultMetrics({ register: registry, prefix: 'basewar_node_' });
 
 /**
  * How long it takes to advance one match by one tick.
@@ -34,7 +34,7 @@ collectDefaultMetrics({ register: registry, prefix: 'nexus_node_' });
  * headroom.
  */
 export const tickDuration = new Histogram({
-  name: 'nexus_tick_duration_ms',
+  name: 'basewar_tick_duration_ms',
   help: 'Time to advance one match by one simulation tick, in milliseconds',
   buckets: [0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 25, 50, 100],
   registers: [registry],
@@ -42,26 +42,26 @@ export const tickDuration = new Histogram({
 
 /** Time spent packing a snapshot into bytes — the other per-tick cost. */
 export const encodeDuration = new Histogram({
-  name: 'nexus_encode_duration_ms',
+  name: 'basewar_encode_duration_ms',
   help: 'Time to encode one snapshot, in milliseconds',
   buckets: [0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 25],
   registers: [registry],
 });
 
 export const roomsActive = new Gauge({
-  name: 'nexus_rooms_active',
+  name: 'basewar_rooms_active',
   help: 'Matches currently running on this process',
   registers: [registry],
 });
 
 export const playersConnected = new Gauge({
-  name: 'nexus_players_connected',
+  name: 'basewar_players_connected',
   help: 'Human players currently connected to this process',
   registers: [registry],
 });
 
 export const botsActive = new Gauge({
-  name: 'nexus_bots_active',
+  name: 'basewar_bots_active',
   help: 'Seats currently driven by the AI (never claimed, or disconnected)',
   registers: [registry],
 });
@@ -71,13 +71,13 @@ export const botsActive = new Gauge({
  * number that decides the hosting bill (see §12 of MULTIPLAYER_PLAN.md).
  */
 export const snapshotBytes = new Counter({
-  name: 'nexus_snapshot_bytes_total',
+  name: 'basewar_snapshot_bytes_total',
   help: 'Total snapshot bytes broadcast',
   registers: [registry],
 });
 
 export const snapshotsSent = new Counter({
-  name: 'nexus_snapshots_total',
+  name: 'basewar_snapshots_total',
   help: 'Snapshots broadcast, by kind',
   labelNames: ['kind'] as const,
   registers: [registry],
@@ -88,34 +88,34 @@ export const snapshotsSent = new Counter({
  * released client or somebody probing the server — both worth knowing about.
  */
 export const commands = new Counter({
-  name: 'nexus_commands_total',
+  name: 'basewar_commands_total',
   help: 'Player commands received, by outcome',
   labelNames: ['result'] as const,   // accepted | refused | malformed | ratelimited
   registers: [registry],
 });
 
 export const roomErrors = new Counter({
-  name: 'nexus_room_errors_total',
+  name: 'basewar_room_errors_total',
   help: 'Simulation ticks that threw. Should be zero.',
   registers: [registry],
 });
 
 export const matchesCompleted = new Counter({
-  name: 'nexus_matches_completed_total',
+  name: 'basewar_matches_completed_total',
   help: 'Matches that finished, by how they ended',
   labelNames: ['reason'] as const,   // lastStanding | timeLimit
   registers: [registry],
 });
 
 export const joins = new Counter({
-  name: 'nexus_joins_total',
+  name: 'basewar_joins_total',
   help: 'Join attempts, by outcome',
   labelNames: ['result'] as const,   // ok | full | protocolMismatch
   registers: [registry],
 });
 
 export const disconnects = new Counter({
-  name: 'nexus_disconnects_total',
+  name: 'basewar_disconnects_total',
   help: 'Players leaving, by kind',
   labelNames: ['kind'] as const,     // consented | dropped | reconnected | abandoned
   registers: [registry],

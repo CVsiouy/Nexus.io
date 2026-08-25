@@ -1,6 +1,6 @@
 import { Room, Client } from '@colyseus/core';
 // @ts-expect-error — the simulation is plain JavaScript by design (see the plan).
-import { Simulation } from '@nexus/sim';
+import { Simulation } from '@basewar/sim';
 import { log } from './log.js';
 import { config } from './config.js';
 import {
@@ -13,7 +13,7 @@ import {
   validateCommand, encodeSnapshot, PROTOCOL_VERSION, TICK_MS, SNAPSHOT_EVERY_TICKS,
   COMMAND_RATE_LIMIT, SEATS, MATCH_LIMIT_MS, RECONNECT_GRACE_MS, MSG,
   type Command,
-} from '@nexus/protocol';
+} from '@basewar/protocol';
 
 /**
  * How often a full keyframe goes out. Between keyframes we omit the fields that

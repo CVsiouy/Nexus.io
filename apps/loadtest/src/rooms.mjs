@@ -16,7 +16,7 @@
  *
  * Run:  ROOMS=25 docker compose exec server node ../loadtest/src/rooms.mjs
  */
-import { Simulation, TICK_MS } from '@nexus/sim';
+import { Simulation, TICK_MS } from '@basewar/sim';
 
 const ROOMS      = Number(process.env.ROOMS ?? 20);
 const WARMUP_SEC = Number(process.env.WARMUP_SEC ?? 120);

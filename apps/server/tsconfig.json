@@ -14,8 +14,8 @@
     "noEmit": true,
     "types": ["node"],
     "paths": {
-      "@nexus/protocol": ["../../packages/protocol/src/index.ts"],
-      "@nexus/sim": ["../../packages/sim/index.js"]
+      "@basewar/protocol": ["../../packages/protocol/src/index.ts"],
+      "@basewar/sim": ["../../packages/sim/index.js"]
     }
   },
   "include": ["src/**/*.ts"]

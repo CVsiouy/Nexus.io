@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { encodeSnapshot, decodeSnapshot } from '@nexus/protocol';
+import { encodeSnapshot, decodeSnapshot } from '@basewar/protocol';
 // @ts-expect-error — the simulation is plain JavaScript by design.
-import { Simulation, TICK_MS, WORLD_SIZE } from '@nexus/sim';
+import { Simulation, TICK_MS, WORLD_SIZE } from '@basewar/sim';
 
 /**
  * The binary codec is a pure optimisation, so the bar is not "does it produce

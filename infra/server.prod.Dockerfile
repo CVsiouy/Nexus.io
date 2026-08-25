@@ -30,7 +30,7 @@ COPY apps/server/package.json       apps/server/package.json
 # `npm ci` installs exactly what the lockfile says — reproducible, unlike
 # `npm install` which may quietly resolve to newer versions.
 # --omit=dev leaves out test tooling and the client's build deps.
-RUN npm ci --omit=dev --workspace @nexus/server --include-workspace-root \
+RUN npm ci --omit=dev --workspace @basewar/server --include-workspace-root \
  || npm install --omit=dev
 
 # Only what the server actually needs.

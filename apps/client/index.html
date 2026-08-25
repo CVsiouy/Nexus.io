@@ -2,26 +2,121 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Nexus.io — Mother Base War</title>
-  <meta name="description" content="Mine gold. Build turrets and squads. Destroy every rival mother base." />
+  <!--
+    viewport-fit=cover is a PREREQUISITE, not a nicety: without it every
+    env(safe-area-inset-*) below resolves to 0px and all the notch handling is
+    silently inert.
+
+    interactive-widget=resizes-content makes the on-screen keyboard resize the
+    layout instead of panning it — the name field is the first thing a phone
+    player touches.
+
+    Deliberately NOT setting user-scalable=no: iOS Safari has ignored it since
+    iOS 10 for accessibility reasons, so it buys nothing and reads as a promise
+    the browser will not keep. What actually stops pinch/double-tap zoom on the
+    play surface is `touch-action: none` on the canvas, below.
+  -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content" />
+  <title>BaseWar.io — Mother Base War</title>
+  <meta name="description" content="Command squads, wall your base, and destroy every rival mother base. A fast .io strategy game." />
+  <!-- There was no favicon, manifest or social-card markup at all before the
+       rename. An inline SVG data URI avoids adding a binary asset and a second
+       network request: a dark tile with the blue base ring the game is about. -->
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%231a2a40'/%3E%3Ccircle cx='32' cy='32' r='17' fill='none' stroke='%230077cc' stroke-width='5'/%3E%3Ccircle cx='32' cy='32' r='7' fill='%2316a34a'/%3E%3C/svg%3E">
+  <meta name="theme-color" content="#f4f4f4">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="BaseWar.io — Mother Base War">
+  <meta property="og:description" content="Command squads, wall your base, and destroy every rival mother base. A fast .io strategy game.">
+  <meta name="twitter:card" content="summary">
   <link rel="preconnect" href="https://fonts.googleapis.com">
+  <!-- The stylesheet is on googleapis, but the font FILES come from gstatic.
+       Preconnecting to only the first leaves the slower hop uncovered. -->
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
   <style>
     *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
-    html, body { width: 100%; height: 100%; background: #f4f4f4; overflow: hidden; }
-    #app { width: 100vw; height: 100vh; }
+    html, body {
+      width: 100%; height: 100%; background: #f4f4f4; overflow: hidden;
+      /* Kills Chrome-Android pull-to-refresh, which otherwise fires on any
+         downward drag near the top of the map. */
+      overscroll-behavior: none;
+    }
+    /*
+     * 100dvh, not 100vh.
+     *
+     * 100vh is the LARGE viewport (URL bar retracted), while PixiJS sizes its
+     * renderer from window.innerHeight, which is the CURRENT one. So on every
+     * mobile browser CSS and JS disagreed about the canvas height by 60-100px
+     * and the bottom of the HUD sat underneath the browser chrome.
+     *
+     * The usual objection to dvh — that it animates as the URL bar collapses
+     * and makes the layout jitter — does not apply here: `overflow: hidden` on
+     * body means there is no page scroll, so the URL bar never retracts and
+     * dvh == svh == lvh. Please don't "fix" this back to vh.
+     *
+     * 100% rather than 100vw because 100vw includes the classic desktop
+     * scrollbar width and overflows by ~15px.
+     */
+    #app { width: 100%; height: 100vh; height: 100dvh; }
+    /*
+     * The play surface must never scroll, zoom, or pop a text-selection callout.
+     *
+     * NOTE: @pixi/events auto-registers an EventSystem that already sets
+     * canvas.style.touchAction = 'none', so some of this is belt-and-braces —
+     * but relying on a side effect of a library's internals for something this
+     * load-bearing is how it silently breaks on upgrade. State it here.
+     */
+    #app, #app canvas {
+      touch-action: none;
+      user-select: none; -webkit-user-select: none;
+      -webkit-touch-callout: none;
+      -webkit-tap-highlight-color: transparent;
+    }
 
     /* ─────────────────────────────────────────────
        HUD — diep.io inspired light theme
     ───────────────────────────────────────────── */
+    /*
+     * LAYOUT TOKENS
+     * ─────────────
+     * Every HUD offset used to be a hardcoded pixel that secretly encoded an
+     * assumption about a DIFFERENT element. #group-panel's `176px` meant "where
+     * the skill panel ends"; its `150px` meant "where notifications start". Move
+     * either element and the other broke silently.
+     *
+     * The offsets now live here, once, and every panel derives from them. A
+     * responsive tier changes a variable instead of re-deriving arithmetic.
+     *
+     * max(14px, env(...)) rather than bare env(): on a phone without a notch
+     * env() is 0px and panels would sit flush against the glass edge.
+     */
     #hud {
       position: fixed; top: 0; left: 0;
-      width: 100%; height: 100%;
+      width: 100%;
+      height: 100vh; height: 100dvh;
       pointer-events: none;
       font-family: 'Inter', sans-serif;
       color: #2c3e50;
       z-index: 10;
+
+      /* Edge gutters, safe-area aware. */
+      --gut-t: max(14px, env(safe-area-inset-top));
+      --gut-r: max(14px, env(safe-area-inset-right));
+      --gut-b: max(14px, env(safe-area-inset-bottom));
+      --gut-l: max(14px, env(safe-area-inset-left));
+
+      /* Reserved bands. Zero on desktop; the compact tiers give them height. */
+      --dock-h:  0px;    /* bottom touch action dock */
+      --rail-w:  0px;    /* vertical squad rail (landscape phone) */
+      --rail-h:  0px;    /* horizontal squad rail (portrait phone) */
+      --strip-h: 0px;    /* portrait level strip */
+
+      /* Minimum interactive box. The touch tier raises this to 44px. */
+      --tap: 30px;
+
+      /* Derived anchors — nothing downstream re-derives these. */
+      --left-top:    calc(var(--gut-t) + 44px + 8px);   /* under the skill panel */
+      --bottom-safe: calc(var(--gut-b) + var(--dock-h));
     }
 
     /* ─── Shared panel style ─── */
@@ -261,26 +356,6 @@
     .bp-v { font-family: 'Rajdhani', sans-serif; font-size: 15px; font-weight: 700; color: #1a2a40; }
     .bp-hint { font-size: 8px; color: #a9b6c4; margin-top: 2px; max-width: 84px; line-height: 1.3; }
 
-    /* Rally button */
-    #rally-btn {
-      position: absolute; bottom: 100px; left: 50%;
-      transform: translateX(-50%);
-      pointer-events: all; cursor: pointer;
-      background: rgba(255,255,255,0.92);
-      border: 1.5px solid #0077cc; border-radius: 22px;
-      color: #0077cc; font-family: 'Rajdhani', sans-serif;
-      font-size: 12px; font-weight: 700; letter-spacing: 1.5px;
-      padding: 7px 18px; display: flex; align-items: center; gap: 8px;
-      box-shadow: 0 2px 10px rgba(0,0,0,0.12);
-      transition: all .15s ease;
-    }
-    #rally-btn:hover { background: #0077cc; color: #fff; }
-    #rally-btn kbd {
-      background: #e2e8f0; border: 1px solid #b0bec5; border-radius: 4px;
-      padding: 1px 5px; font-size: 9px; color: #1a2a40; font-family: monospace;
-    }
-    #rally-btn:hover kbd { background: #fff; }
-
     /* Skill / buffs panel (top-left) */
     #skill-panel {
       position: absolute; top: 14px; left: 14px;
@@ -307,25 +382,6 @@
     .sk-row.spendable:hover { border-color: #0077cc; background: #eaf5ff; }
     .sk-name { font-weight: 500; }
     .sk-lvl { font-family: 'Rajdhani', sans-serif; font-weight: 700; color: #1a2a40; }
-
-    /* ─── Unit panel (above the rally button) ─── */
-    #unit-panel {
-      position: absolute; bottom: 140px; left: 50%;
-      transform: translateX(-50%);
-      padding: 12px 20px; min-width: 220px;
-      text-align: center; display: none;
-    }
-    #unit-panel.vis { display: block; }
-    #up-name {
-      font-family: 'Rajdhani', sans-serif;
-      font-size: 14px; font-weight: 700;
-      color: #1a2a40; letter-spacing: 1.5px;
-      text-transform: uppercase; margin-bottom: 6px;
-    }
-    #up-hp-bar { height: 5px; background: #e2e8f0; border-radius: 4px; overflow: hidden; margin-bottom: 6px; }
-    #up-hp-fill { height: 100%; width: 100%; background: #22c55e; border-radius: 4px; transition: width .2s; }
-    #up-stats { font-size: 11px; color: #7b8fa1; }
-
     /* ─── Controls hint bar (bottom-left) ─── */
     #controls-hint {
       position: absolute; bottom: 14px; left: 14px;
@@ -499,40 +555,6 @@
       font-family: monospace; white-space: nowrap;
     }
 
-    .mode-buttons { display: flex; gap: 16px; flex-wrap: wrap; justify-content: center; }
-    .start-btn {
-      background: linear-gradient(135deg, #0077cc, #004fa3);
-      color: white; border: none;
-      padding: 16px 40px; border-radius: 50px;
-      font-family: 'Rajdhani', sans-serif;
-      font-size: 18px; font-weight: 700;
-      letter-spacing: 2px; text-transform: uppercase;
-      cursor: pointer; pointer-events: all;
-      transition: all .2s ease;
-      box-shadow: 0 4px 18px rgba(0,119,204,0.4), 0 1px 3px rgba(0,0,0,0.1);
-    }
-    .start-btn:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 8px 28px rgba(0,119,204,0.5), 0 2px 6px rgba(0,0,0,0.12);
-      background: linear-gradient(135deg, #0088ee, #0060be);
-    }
-    .start-btn:active { transform: translateY(0); }
-    .start-btn.alt {
-      background: linear-gradient(135deg, #7c3aed, #b91c1c);
-      box-shadow: 0 4px 18px rgba(180,40,80,0.4), 0 1px 3px rgba(0,0,0,0.1);
-    }
-    .start-btn.alt:hover { background: linear-gradient(135deg, #8b46ff, #d42020); box-shadow: 0 8px 28px rgba(180,40,80,0.5); }
-    .start-btn.mine { background: linear-gradient(135deg, #b8860b, #7c5a00); box-shadow: 0 4px 18px rgba(184,134,11,0.4), 0 1px 3px rgba(0,0,0,0.1); }
-    .start-btn.mine:hover { background: linear-gradient(135deg, #d4a017, #8f6a00); box-shadow: 0 8px 28px rgba(184,134,11,0.5); }
-
-    /* ─── Online play ─── */
-    .start-btn.online {
-      background: linear-gradient(135deg, #16a34a, #047857);
-      box-shadow: 0 4px 18px rgba(22,163,74,0.42), 0 1px 3px rgba(0,0,0,0.1);
-      font-size: 20px; padding: 18px 46px;
-    }
-    .start-btn.online:hover { background: linear-gradient(135deg, #1cc45c, #059669); box-shadow: 0 8px 30px rgba(22,163,74,0.5); }
-    .start-btn.online:disabled { opacity: .55; cursor: wait; transform: none; }
     .name-input {
       background: #ffffff; border: 2px solid #d5dde6; border-radius: 50px;
       padding: 15px 26px; font-family: 'Rajdhani', sans-serif;
@@ -541,15 +563,6 @@
       transition: border-color .2s ease;
     }
     .name-input:focus { border-color: #16a34a; }
-    .mode-divider {
-      display: flex; align-items: center; gap: 14px;
-      margin: 26px auto 18px; max-width: 560px; width: 100%;
-      color: #8fa0b0; font-family: 'Rajdhani', sans-serif;
-      font-size: 13px; letter-spacing: 2px; text-transform: uppercase;
-    }
-    .mode-divider::before, .mode-divider::after {
-      content: ''; flex: 1; height: 1px; background: #d5dde6;
-    }
     .conn-status {
       width: 100%; text-align: center; min-height: 20px; margin-top: 10px;
       font-family: 'Rajdhani', sans-serif; font-size: 14px;
@@ -678,46 +691,90 @@
     #cmd-base.under-attack .c-name { color: #dc2626; }
 
     /* ─── Specialization Modal ─── */
+    /*
+     * ─── Specialization modal ───
+     *
+     * This appears MID-MATCH and pauses the game, and it is dismissable only by
+     * picking a card. So if its content does not fit, the player is stuck.
+     *
+     * It used to be a centred flex column with no overflow — the exact trap
+     * documented for #gameover further down. A centred column that overflows
+     * clips at BOTH ends, and the clipped-off top cannot be scrolled to because
+     * scrolling never goes above a container's start. On a landscape phone
+     * (~393px tall) the title and the first card were off-screen and
+     * unreachable: a hard soft-lock.
+     *
+     * Same fix as #gameover: auto margins on the first and last child do the
+     * centring when there is room and collapse to zero when there is not, so it
+     * scrolls normally instead of clipping.
+     */
     #spec-modal {
       position: fixed; inset: 0;
       background: rgba(244,244,244,0.9);
       backdrop-filter: blur(6px);
       display: none; flex-direction: column;
-      align-items: center; justify-content: center;
-      z-index: 90; gap: 24px;
+      align-items: center; justify-content: flex-start;
+      z-index: 90; gap: clamp(10px, 2.4vh, 24px);
+      overflow-y: auto; overscroll-behavior: contain;
+      padding: max(clamp(12px, 3vh, 32px), env(safe-area-inset-top))
+               max(16px, env(safe-area-inset-right))
+               max(clamp(12px, 3vh, 32px), env(safe-area-inset-bottom))
+               max(16px, env(safe-area-inset-left));
     }
     #spec-modal.vis { display: flex; }
+    #spec-modal .spec-title  { margin-top: auto; }      /* top half of the centring */
+    #spec-modal .spec-cards  { margin-bottom: auto; }   /* bottom half */
     #spec-modal .spec-title {
       font-family: 'Rajdhani', sans-serif;
-      font-size: 28px; font-weight: 700;
-      color: #1a2a40; letter-spacing: 2px;
+      font-size: clamp(18px, 4.2vh, 28px); font-weight: 700;
+      color: #1a2a40; letter-spacing: 2px; text-align: center;
     }
-    #spec-modal .spec-subtitle { font-size: 13px; color: #7b8fa1; }
+    #spec-modal .spec-subtitle {
+      font-size: clamp(11px, 1.8vh, 13px); color: #7b8fa1; text-align: center;
+    }
     #spec-modal .spec-cards {
-      display: flex; gap: 18px; flex-wrap: wrap;
+      display: flex; gap: clamp(8px, 1.6vh, 18px); flex-wrap: wrap;
       justify-content: center;
     }
     .spec-card {
       background: white; border: 1.5px solid #e2e8f0;
-      border-radius: 14px; padding: 22px 26px;
-      min-width: 180px; cursor: pointer; pointer-events: all;
+      border-radius: 14px;
+      padding: clamp(10px, 2vh, 22px) clamp(12px, 3vw, 26px);
+      min-width: min(180px, 100%); cursor: pointer; pointer-events: all;
       transition: all .2s ease;
       box-shadow: 0 2px 8px rgba(0,0,0,0.08);
       text-align: center;
     }
-    .spec-card:hover {
-      border-color: #0077cc;
-      box-shadow: 0 6px 20px rgba(0,119,204,0.2);
-      transform: translateY(-3px);
+    .spec-card .spec-icon {
+      font-size: clamp(20px, 4vh, 32px); margin-bottom: clamp(4px, 1.2vh, 10px);
     }
-    .spec-card .spec-icon { font-size: 32px; margin-bottom: 10px; }
     .spec-card .spec-name {
       font-family: 'Rajdhani', sans-serif;
-      font-size: 16px; font-weight: 700;
+      font-size: clamp(13px, 2.2vh, 16px); font-weight: 700;
       color: #1a2a40; letter-spacing: 1.5px;
-      text-transform: uppercase; margin-bottom: 8px;
+      text-transform: uppercase; margin-bottom: clamp(4px, 1vh, 8px);
     }
-    .spec-card .spec-desc { font-size: 12px; color: #7b8fa1; line-height: 1.6; }
+    .spec-card .spec-desc {
+      font-size: clamp(11px, 1.7vh, 12px); color: #7b8fa1; line-height: 1.45;
+    }
+    /* Hover-gated: on a touch screen :hover latches after a tap and leaves the
+       card visibly lifted until you tap elsewhere. See the hover block below. */
+    @media (hover: hover) and (pointer: fine) {
+      .spec-card:hover {
+        border-color: #0077cc;
+        box-shadow: 0 6px 20px rgba(0,119,204,0.2);
+        transform: translateY(-3px);
+      }
+    }
+    /*
+     * Landscape phone: 3 cards across ~850px fit comfortably in ONE row, so the
+     * modal needs no scrolling at all. The scroll recovery above is the safety
+     * net; this is the actual plan.
+     */
+    @media (pointer: coarse) and (orientation: landscape) and (max-height: 520px) {
+      #spec-modal .spec-cards { flex-wrap: nowrap; width: 100%; }
+      .spec-card { flex: 1 1 0; min-width: 0; }
+    }
 
     /* ─── Menu button (top-center) ─── */
     #menu-btn {
@@ -750,7 +807,8 @@
       color: #1a2a40;
     }
     #pause-modal .pause-sub { font-size: 13px; color: #7b8fa1; margin-bottom: 18px; }
-    .pause-actions, .go-actions { display: flex; gap: 14px; }
+    /* flex-wrap so two buttons do not overflow a <=360px phone. */
+    .pause-actions, .go-actions { display: flex; gap: 14px; flex-wrap: wrap; justify-content: center; }
     .menu-action {
       pointer-events: all; cursor: pointer;
       font-family: 'Rajdhani', sans-serif;
@@ -862,8 +920,19 @@
       background: rgba(0,0,0,0.22); border-radius: 3px;
     }
     #group-panel::-webkit-scrollbar-thumb:hover { background: rgba(0,0,0,0.38); }
-    /* Minimap (Map) panel hidden for now. */
-    #minimap-wrap { display: none !important; }
+    /* Minimap is live again — it is closed by default and only draws while
+       open, so it costs nothing when collapsed. */
+    #minimap-wrap .panel-body { position: relative; }
+    #minimap-wrap canvas {
+      display: block; width: 150px; height: 150px;
+      border-radius: 8px; background: rgba(226,232,240,0.6);
+    }
+    #minimap-close {
+      position: absolute; top: -6px; right: -6px; z-index: 2;
+      width: 26px; height: 26px; border-radius: 50%;
+      border: 1.5px solid #d5dde6; background: #fff; color: #64748b;
+      font-size: 12px; line-height: 1; cursor: pointer; pointer-events: all;
+    }
     #group-panel .gp-title {
       font-family: 'Rajdhani', sans-serif; font-size: 9px; font-weight: 700;
       letter-spacing: 2px; text-transform: uppercase; color: #7b8fa1;
@@ -948,6 +1017,295 @@
       letter-spacing: 1.5px; color: #b8860b; text-transform: uppercase;
       display: flex; align-items: center;
     }
+
+    /* ═══════════════════════════════════════════════════════════════════════
+       TOUCH & RESPONSIVE
+       ═══════════════════════════════════════════════════════════════════════
+
+       Breakpoints discriminate on (pointer: coarse), NOT on width. An iPhone
+       15 Pro Max in landscape is 932px wide — wider than many laptop windows —
+       while a desktop user who narrows their browser to 400px still has a mouse
+       and wants precise 30px targets, not 44px ones. Width alone gets both
+       cases wrong.
+
+       `pointer`, not `any-pointer`: any-pointer:coarse is true on a Windows
+       laptop that has a touchscreen AND a mouse, which is exactly the machine
+       we want left on the desktop layout.
+
+       Then we query the SHORT axis of the current orientation — max-height in
+       landscape, max-width in portrait — because that is the scarce one. 520px
+       sits above every phone and below every tablet, so iPads and the Fold
+       inner screen correctly keep the full layout.
+       ─────────────────────────────────────────────────────────────────────── */
+
+    /* Elements that exist only for touch. */
+    .touch-only { display: none !important; }
+    body.touch .touch-only { display: flex !important; }
+
+    /* ── Top strip: three ex-overlapping elements, now flex siblings ────── */
+    #top-strip {
+      position: absolute; top: var(--gut-t); left: 50%;
+      transform: translateX(-50%);
+      display: flex; align-items: center; gap: 8px;
+      z-index: 20;
+    }
+    /* Both were absolutely positioned at the same spot; as flow children they
+       cannot collide, and the hardcoded margin-top:44px dodge on #match-bar
+       is no longer needed. */
+    #top-strip #match-bar    { position: static; margin-top: 0; transform: none; left: auto; top: auto; }
+    #top-strip #spectate-tag { position: static; transform: none; left: auto; top: auto; }
+
+    /* ── Camera stick ───────────────────────────────────────────────────── */
+    #joystick {
+      position: absolute;
+      left: calc(var(--gut-l) + 4px);
+      bottom: calc(var(--gut-b) + var(--dock-h) + 10px);
+      width: 116px; height: 116px;
+      align-items: center; justify-content: center;
+      pointer-events: auto;
+      /* Without this the browser claims the drag for scrolling before we ever
+         see a pointermove. */
+      touch-action: none;
+      z-index: 22;
+      opacity: .78; transition: opacity .15s ease;
+    }
+    #joystick.active { opacity: 1; }
+    #joystick .js-ring {
+      position: absolute; inset: 0; border-radius: 50%;
+      background: rgba(255,255,255,0.42);
+      border: 1.5px solid rgba(0,0,0,0.12);
+      box-shadow: 0 2px 10px rgba(0,0,0,0.12);
+      backdrop-filter: blur(6px);
+    }
+    #joystick .js-knob {
+      position: relative; width: 46px; height: 46px; border-radius: 50%;
+      background: rgba(255,255,255,0.95);
+      border: 1.5px solid #cfe0ef;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.18);
+      will-change: transform;
+    }
+
+    /* ── Rotate hint ────────────────────────────────────────────────────── */
+    #rotate-hint {
+      display: none;                       /* base state: never shown */
+      position: absolute; left: 50%; transform: translateX(-50%);
+      bottom: calc(var(--gut-b) + var(--dock-h) + var(--rail-h) + var(--strip-h) + 12px);
+      z-index: 30;
+      align-items: center; gap: 8px;
+      padding: 0 6px 0 14px; min-height: 44px;
+      border-radius: 22px;
+      background: rgba(26,42,64,0.9); color: #fff;
+      font-family: 'Rajdhani', sans-serif; font-size: 13px;
+      font-weight: 700; letter-spacing: 1px;
+      box-shadow: 0 4px 18px rgba(0,0,0,0.25);
+      pointer-events: none;                /* the pill never eats a map tap */
+      animation: rhFade 9s ease forwards;  /* auto-dismiss, no JS timer */
+    }
+    #rotate-hint.dismissed { display: none !important; }
+    #rotate-hint .rh-icon { font-size: 17px; animation: rhSpin 2.4s ease-in-out infinite; }
+    #rotate-hint > button {
+      pointer-events: auto;                /* …but the ✕ does */
+      min-width: 44px; min-height: 44px;
+      background: none; border: 0; color: rgba(255,255,255,0.75);
+      font-size: 15px; cursor: pointer;
+    }
+    @keyframes rhFade { 0%,4% {opacity:0} 10%,80% {opacity:1} 100% {opacity:0; visibility:hidden} }
+    @keyframes rhSpin { 0%,60%,100% {transform:rotate(0)} 80% {transform:rotate(-90deg)} }
+
+    /* Armed ping button. */
+    #cmd-ping.armed { background: #fff7ed; border-color: #f59e0b; }
+
+    /* ═══ T1 — any coarse pointer. Sizing and gesture hygiene only. ═══════ */
+    @media (pointer: coarse) {
+      #hud { --tap: 44px; }
+
+      /* Every collapsed panel handle becomes a real 44px button. On four of
+         these panels the handle is the ONLY interactive target. */
+      .collapsible .panel-handle { min-height: var(--tap); }
+      .sk-row       { min-height: var(--tap); padding: 0 10px; }
+      #menu-btn     { min-height: var(--tap); display: inline-flex; align-items: center; }
+      .cmd-btn      { min-width: 54px; min-height: var(--tap); }
+      .group-entry  { min-height: var(--tap); }
+      .btn-practice { min-height: var(--tap); }
+      #restart-btn  { min-height: var(--tap); }
+      .menu-action  { min-height: var(--tap); }
+      #spec-modal .spec-btn { min-height: var(--tap); }
+      .fb-star {
+        width:  max(var(--tap), clamp(30px, 5.2vh, 42px));
+        height: max(var(--tap), clamp(30px, 5.2vh, 42px));
+      }
+      #cmd-bar { gap: 8px; }
+      #build-panel { gap: 8px; }
+
+      /* iOS zooms the page when a field under 16px is focused — and because
+         user-scalable=no is ignored there, it never zooms back out. */
+      .fb-comment, .name-input { font-size: max(16px, 1em); }
+
+      /* Keyboard hints are noise on a device with no keyboard. */
+      .handle-hint, .cmd-btn .c-key { display: none; }
+
+      /* Containers must not swallow taps; only their buttons opt in. As a
+         full-width bar, #cmd-bar with pointer-events on the container would be
+         a large dead strip that eats taps and does nothing. */
+      #cmd-bar, #build-panel { pointer-events: none; }
+      #cmd-bar .cmd-btn, #build-panel .unit-btn, #build-panel .econ-btn,
+      #build-panel .turret-btn, #build-panel .panel-handle { pointer-events: auto; }
+
+      /* Removes the 300ms tap delay without disabling scroll. */
+      .cmd-btn, .unit-btn, .econ-btn, .turret-btn, .group-entry,
+      .panel-handle, .sk-row, .spec-btn, .btn-play, .btn-practice,
+      .menu-action, .fb-star, .fb-send { touch-action: manipulation; }
+
+      /* The squad list scrolls, so it must NOT inherit touch-action:none. */
+      #group-panel { touch-action: pan-y; -webkit-overflow-scrolling: touch; }
+    }
+
+    /* ═══ Hover gating ═══════════════════════════════════════════════════
+       On a touchscreen :hover LATCHES after a tap, leaving buttons visibly
+       stuck 2px up until you tap elsewhere. Rather than resetting ~15 rules
+       individually, suppress the transform for devices that cannot truly
+       hover. Colour-only hovers are harmless and left alone. */
+    @media (hover: none) {
+      .cmd-btn:hover, .unit-btn:hover, .econ-btn:hover, .turret-btn:hover,
+      .btn-play:hover, .btn-practice:hover, .menu-action:hover,
+      #restart-btn:hover, .fb-star:hover, .spec-card:hover, .group-entry:hover {
+        transform: none;
+      }
+    }
+
+    /* ═══ T2 — landscape phone. The preferred layout. ════════════════════ */
+    @media (pointer: coarse) and (orientation: landscape) and (max-height: 520px) {
+      #hud { --dock-h: 52px; --rail-w: 60px; }
+
+      /* The HUD hugs the edges; nothing floats over the middle of the map. */
+      #cmd-bar {
+        top: auto; bottom: var(--gut-b);
+        right: var(--gut-r); left: auto; transform: none;
+        flex-direction: row; padding: 5px;
+      }
+      .cmd-btn { min-width: 50px; padding: 4px 6px; }
+      .cmd-btn .c-name { font-size: 8px; }
+
+      /* Squad rail down the left. */
+      #group-panel {
+        top: var(--left-top); left: var(--gut-l);
+        width: var(--rail-w); min-width: 0;
+        bottom: calc(var(--gut-b) + var(--dock-h) + 6px);
+        max-height: none;
+        scroll-snap-type: y proximity;
+      }
+      #group-panel .gp-title { display: none; }
+      .group-entry { scroll-snap-align: start; }
+
+      /* Level chip moves to the top-right, vacating the bottom-right corner
+         it shared with the minimap. */
+      #level-bar { top: var(--gut-t); right: calc(var(--gut-r) + 52px); bottom: auto; }
+
+      /* Documents WASD / Tab / X / C / V — keys that do not exist here. Its
+         content lives in the pause modal instead. */
+      #controls-hint { display: none !important; }
+
+      #notifs {
+        left: calc(var(--gut-l) + var(--rail-w) + 8px);
+        bottom: calc(var(--gut-b) + var(--dock-h) + 6px);
+        max-width: 200px;
+      }
+      #notifs .notif:nth-child(n+3) { display: none; }
+      .notif { white-space: normal; }
+
+      #build-panel { left: calc(var(--gut-l) + var(--rail-w) + 90px); transform: none; }
+      #minimap-wrap { bottom: calc(var(--gut-b) + var(--dock-h) + 6px); right: var(--gut-r); }
+
+      /* The stick sits above the dock, clear of both. */
+      #joystick { bottom: calc(var(--gut-b) + var(--dock-h) + 6px); width: 104px; height: 104px; }
+    }
+
+    /* ═══ T3 — portrait phone. Compacted. ════════════════════════════════ */
+    @media (pointer: coarse) and (orientation: portrait) and (max-width: 520px) {
+      #hud { --dock-h: 52px; --rail-h: 62px; --strip-h: 0px; }
+
+      /* The squad rail rotates: a 60px vertical rail costs 15% of a 393px
+         width, but a 62px horizontal one costs only 7% of an 852px height. */
+      #group-panel {
+        top: auto; left: var(--gut-l); right: var(--gut-r); width: auto;
+        bottom: calc(var(--gut-b) + var(--dock-h) + 6px);
+        height: var(--rail-h); max-height: none;
+        overflow-x: auto; overflow-y: hidden;
+        touch-action: pan-x;
+        scroll-snap-type: x proximity;
+      }
+      #group-panel .gp-title { display: none; }
+      #group-list { flex-direction: row; }
+      .group-entry { flex: 0 0 auto; min-width: 54px; scroll-snap-align: start; }
+
+      #cmd-bar {
+        top: auto; bottom: var(--gut-b);
+        left: var(--gut-l); right: var(--gut-r); transform: none;
+        flex-direction: row; justify-content: space-between; padding: 4px;
+      }
+      .cmd-btn { min-width: 0; flex: 1 1 0; padding: 4px 2px; }
+      .cmd-btn .c-name { font-size: 8px; }
+
+      #controls-hint { display: none !important; }
+      #level-bar  { bottom: auto; top: var(--gut-t); right: var(--gut-r); }
+      #notifs {
+        left: var(--gut-l); right: var(--gut-r); max-width: none;
+        bottom: calc(var(--gut-b) + var(--dock-h) + var(--rail-h) + 10px);
+      }
+      #notifs .notif:nth-child(n+3) { display: none; }
+      .notif { white-space: normal; }
+
+      /* A horizontal scroller is wrong at 393px; a wrapping row is not. */
+      #build-panel {
+        left: var(--gut-l); right: var(--gut-r); transform: none;
+        bottom: calc(var(--gut-b) + var(--dock-h) + var(--rail-h) + 10px);
+        flex-wrap: wrap; justify-content: center;
+      }
+
+      /* Stick above the rail and dock, on the left where a thumb reaches. */
+      #joystick {
+        bottom: calc(var(--gut-b) + var(--dock-h) + var(--rail-h) + 60px);
+        width: 104px; height: 104px;
+      }
+
+      /* The ONLY rule that shows the hint lives inside (orientation: portrait),
+         so rotating makes it revert to display:none in the same layout pass.
+         That is a stronger guarantee than any JS could give. */
+      #rotate-hint:not(.dismissed) { display: flex; }
+    }
+
+    /* ═══ T4 — very small. Shed rather than shrink. ══════════════════════ */
+    @media (pointer: coarse) and (orientation: landscape) and (max-height: 380px) {
+      #hud { --dock-h: 46px; --rail-w: 52px; }
+      #level-bar, #match-ping { display: none; }
+      #notifs .notif:nth-child(n+2) { display: none; }
+      .group-entry .g-count { font-size: 22px; }
+      #joystick { width: 92px; height: 92px; }
+    }
+    @media (pointer: coarse) and (orientation: portrait) and (max-width: 360px) {
+      #match-ping { display: none; }
+      #notifs .notif:nth-child(n+2) { display: none; }
+      .cmd-btn .c-name { display: none; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      #rotate-hint, #rotate-hint .rh-icon { animation: none; }
+    }
+    /* Graphics quality selector in the menu. */
+    .quality-row {
+      display: flex; align-items: center; justify-content: center; gap: 10px;
+      margin: 14px auto 0; font-family: 'Rajdhani', sans-serif;
+      font-size: 13px; font-weight: 600; letter-spacing: 1px; color: #64748b;
+    }
+    .quality-row select {
+      font-family: 'Rajdhani', sans-serif; font-size: 14px; font-weight: 600;
+      padding: 8px 12px; min-height: 40px; border-radius: 10px;
+      border: 2px solid #d5dde6; background: #fff; color: #223; cursor: pointer;
+    }
+    .quality-row select:focus { outline: none; border-color: #0077cc; }
+    /* Touch rows in the controls list appear only where touch exists. */
+    .ctrl-row.touch-ctrl { display: none; }
+    body.touch .ctrl-row.touch-ctrl { display: flex; }
   </style>
 </head>
 <body>
@@ -957,8 +1315,8 @@
   <!-- HUD overlay -->
   <div id="hud">
 
-    <!-- Level + Stats bar (top-left) -->
-    <div id="level-bar" class="panel collapsible collapsed" data-hotkey="">
+    <!-- Level + Stats bar (bottom-right) -->
+    <div id="level-bar" class="panel collapsible collapsed">
       <div class="panel-handle">
         <span class="level-num" id="hud-lvl">1</span>
         <span class="handle-title">Base</span>
@@ -984,7 +1342,7 @@
       </div>
     </div>
 
-    <!-- Squad panel (left-center) — each squad as a big number + status -->
+    <!-- Squad panel (upper-left, below the buffs panel) — each squad as a big number + status -->
     <div id="group-panel" class="panel">
       <div class="gp-title">Squads</div>
       <div id="group-list"><div class="group-empty">No squads yet</div></div>
@@ -1002,12 +1360,22 @@
     </div>
 
     <!-- Minimap (bottom-right) -->
+    <!--
+      Overview map. Closed by default; tap the handle to open, ✕ to close.
+      The .collapsible machinery in main.js already gives us open/close for
+      free — this only needed the CSS `display:none !important` lifted, a close
+      button, and drawing code (HUDRenderer._drawMinimap), which never existed:
+      the canvas and its 2D context were being acquired and then ignored.
+
+      Tap-to-jump is deliberately NOT wired yet.
+    -->
     <div id="minimap-wrap" class="panel collapsible collapsed">
       <div class="panel-handle">
         <span class="handle-icon">🗺️</span>
         <span class="handle-title">Map</span>
       </div>
       <div class="panel-body">
+        <button id="minimap-close" aria-label="Close map">✕</button>
         <canvas id="minimap" width="150" height="150"></canvas>
       </div>
     </div>
@@ -1059,17 +1427,43 @@
         <div class="ctrl-row">
           <span class="key-badge"><kbd>Click node</kbd> Hold it for gold (mining mode)</span>
           <span class="key-badge"><kbd>Click ally base</kbd> Donate a soldier (team mode)</span>
+        <!-- Touch equivalents. This panel is hidden entirely on a phone (the
+             keys above do not exist there), but a hybrid device can see both. -->
+        <div class="ctrl-row touch-ctrl">
+          <span class="key-badge"><kbd>Tap squad</kbd> Select &middot; tap again to add or remove</span>
+          <span class="key-badge"><kbd>Tap target</kbd> Attack / move / hold node</span>
+        </div>
+        <div class="ctrl-row touch-ctrl">
+          <span class="key-badge"><kbd>Drag map</kbd> Box-select</span>
+          <span class="key-badge"><kbd>Two-finger tap</kbd> Deselect all</span>
+          <span class="key-badge"><kbd>Stick</kbd> Move the camera</span>
+        </div>
         </div>
       </div>
     </div>
+    <!--
+      Top-centre status row.
 
-    <!-- Menu button (top-center) -->
-    <button id="menu-btn" title="Pause / Menu [Esc]">⏸ MENU</button>
+      #menu-btn, #match-bar and #spectate-tag used to be three separately
+      positioned elements sharing top:14px / left:50%. #match-bar carried a
+      hardcoded `margin-top: 44px` to dodge the menu button, and #spectate-tag
+      landed exactly on top of it — printing "SPECTATING" over "MENU" at the
+      worst possible moment.
 
-    <!-- Match status: time left, and how good your connection is. -->
-    <div id="match-bar">
-      <span id="match-clock" title="Time left in this match">20:00</span>
-      <span id="match-ping" class="ping-good" title="Round-trip time to the server"></span>
+      As flex siblings they cannot overlap by construction, the magic 44px
+      disappears, and on a landscape phone one 35px row replaces two stacked
+      ones. This is one of the few places new DOM genuinely earns its place.
+    -->
+    <div id="top-strip">
+      <button id="menu-btn" title="Pause / Menu [Esc]">⏸ MENU</button>
+
+      <!-- Match status: time left, and how good your connection is. -->
+      <div id="match-bar">
+        <span id="match-clock" title="Time left in this match">20:00</span>
+        <span id="match-ping" class="ping-good" title="Round-trip time to the server"></span>
+      </div>
+
+      <div id="spectate-tag">SPECTATING</div>
     </div>
 
     <!-- Shown after your base falls: you keep watching instead of being ejected. -->
@@ -1077,27 +1471,27 @@
       <span class="sp-title">💀 ELIMINATED</span>
       <span class="sp-sub">Spectating — the match continues</span>
     </div>
-    <div id="spectate-tag">SPECTATING</div>
 
     <!-- Notifications -->
     <div id="notifs"></div>
 
-    <!-- Unit panel (above build bar) -->
-    <div id="unit-panel" class="panel">
-      <div id="up-name">GRUNT</div>
-      <div id="up-hp-bar"><div id="up-hp-fill"></div></div>
-      <div id="up-stats"></div>
-    </div>
 
-    <!-- Squad command bar (above build panel) -->
+    <!-- Squad command bar (right-centre on desktop; becomes the bottom dock on touch) -->
     <div id="cmd-bar" class="panel">
       <button class="cmd-btn" id="cmd-release" title="Release the garrison held inside your base as one fresh 15-formation"><span class="c-icon">🏰</span><span class="c-name">Release</span><span class="c-key">R</span></button>
       <button class="cmd-btn" id="cmd-defend"  title="Send the selected squad to defend the mother base"><span class="c-icon">🛡️</span><span class="c-name">Defend</span><span class="c-key">F</span></button>
       <button class="cmd-btn" id="cmd-base"    title="Focus camera on your mother base"><span class="c-icon">🏠</span><span class="c-name">Base</span><span class="c-key">Spc</span></button>
+      <button class="cmd-btn touch-only" id="cmd-split"   title="Split the selected squad in two [X]"><span class="c-icon">✂️</span><span class="c-name">Split</span><span class="c-key">X</span></button>
+      <button class="cmd-btn touch-only" id="cmd-merge"   title="Merge the selected squad with a nearby one [C]"><span class="c-icon">⊕</span><span class="c-name">Merge</span><span class="c-key">C</span></button>
+      <button class="cmd-btn touch-only" id="cmd-balance" title="Even out the size of all your squads [V]"><span class="c-icon">⚖️</span><span class="c-name">Even</span><span class="c-key">V</span></button>
+      <button class="cmd-btn touch-only" id="cmd-ping"    title="Drop a map ping — tap the map next"><span class="c-icon">📍</span><span class="c-name">Ping</span></button>
+      <!-- Deselect. A two-finger tap does the same thing, but nobody discovers
+           that unprompted, so the gesture needs a visible twin. -->
+      <button class="cmd-btn touch-only" id="cmd-clear"   title="Deselect all squads"><span class="c-icon">✕</span><span class="c-name">Clear</span></button>
     </div>
 
     <!-- Build panel (bottom-center) — click to QUEUE (right-click removes soldiers) -->
-    <div id="build-panel" class="panel collapsible" data-hotkey="KeyQ">
+    <div id="build-panel" class="panel collapsible" data-hotkey="KeyQ" data-touch-collapsed>
       <div class="panel-handle">
         <span class="handle-icon">⚙️</span>
         <span class="handle-title">Build</span>
@@ -1163,13 +1557,39 @@
       </div>
     </div>
 
+
+    <!--
+      Camera stick — the touch equivalent of WASD, shown only on touch devices.
+      Needed because there is no pinch-zoom yet, so the player sits at one zoom
+      and must be able to travel. Keeping the camera OFF the map surface is what
+      lets a tap always mean "command" and a drag always mean "select".
+    -->
+    <div id="joystick" class="touch-only" aria-hidden="true">
+      <div class="js-ring"></div>
+      <div class="js-knob"></div>
+    </div>
+
+    <!--
+      Portrait nudge.
+
+      Copy note: NOT "more map area". Zoom fits the longer viewport axis and the
+      world is square, so portrait and landscape show the same amount of map.
+      Landscape's real advantage is HUD room and two-thumb reach, so that is
+      what this claims. Shown purely by a media query nested inside
+      (orientation: portrait) — see the CSS — so it cannot survive a rotation.
+    -->
+    <div id="rotate-hint" role="status">
+      <span class="rh-icon" aria-hidden="true">⟳</span>
+      <span class="rh-text">Rotate for the full controls</span>
+      <button id="rotate-hint-x" aria-label="Dismiss">✕</button>
+    </div>
   </div><!-- /#hud -->
 
   <!-- ─── Menu ─────────────────────────────────────────────────────────────
        A real match runs behind this the whole time you are reading it. The
        scrim above is only just opaque enough to keep the text readable. -->
   <div id="intro">
-    <div class="game-title">NEXUS<span>.</span>IO</div>
+    <div class="game-title">BASEWAR<span>.</span>IO</div>
     <div class="tagline">Mother Base War</div>
 
     <!-- The one thing that matters: name, then play. -->
@@ -1185,6 +1605,18 @@
       <button id="start-ffa" class="btn-practice">FREE-FOR-ALL</button>
       <button id="start-team" class="btn-practice">TEAM · BLUE vs RED</button>
       <button id="start-mining" class="btn-practice">MINING · CAPTURE NODES</button>
+    </div>
+
+    <!-- Graphics quality. Defaults to Reduced on touch devices, Full elsewhere.
+         Antialiasing is fixed when the WebGL context is created, so a change
+         mid-session only affects sharpness now and edge smoothing next load —
+         which the label says rather than silently under-delivering. -->
+    <div class="quality-row">
+      <label for="quality-select">Graphics</label>
+      <select id="quality-select">
+        <option value="full">Full quality</option>
+        <option value="reduced">Reduced &middot; smoother on phones</option>
+      </select>
     </div>
 
     <!-- Three pillars instead of a paragraph. Everything here is checked

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Simulation, TICK_MS } from '@nexus/sim';
+import { Simulation, TICK_MS } from '@basewar/sim';
 import { WorldView, INTERP_DELAY_MS } from '../src/net/WorldView.js';
 import { isTypingInto } from '../src/dom.js';
 

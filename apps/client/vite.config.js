@@ -26,8 +26,8 @@ export default defineConfig({
     // symlink resolution through a Docker bind-mount is fragile, and this
     // removes the whole class of problem.
     alias: {
-      '@nexus/sim': pkg('../../packages/sim/index.js'),
-      '@nexus/protocol': pkg('../../packages/protocol/src/index.ts'),
+      '@basewar/sim': pkg('../../packages/sim/index.js'),
+      '@basewar/protocol': pkg('../../packages/protocol/src/index.ts'),
     },
   },
   worker: {

@@ -1,8 +1,8 @@
 import {
   LEVELS, WORLD_SIZE, SOLDIER_DEFS, TURRET_DEFS,
   hexToCSS, goldRate, mineUpgradeCost,
-} from '@nexus/sim';
-import { MATCH_LIMIT_MS } from '@nexus/protocol';
+} from '@basewar/sim';
+import { MATCH_LIMIT_MS } from '@basewar/protocol';
 
 const STATUS_LABEL = {
   idle:      'IDLE',
@@ -44,6 +44,7 @@ export class HUDRenderer {
 
     this._mmCanvas = document.getElementById('minimap');
     this._mmCtx    = this._mmCanvas.getContext('2d');
+    this._mmWrap   = document.getElementById('minimap-wrap');
     this._cmdBase  = document.getElementById('cmd-base'); // blinks red when base attacked
 
     this._buildBtns  = [...document.querySelectorAll('#build-panel .unit-btn')];
@@ -88,7 +89,7 @@ export class HUDRenderer {
     this._updateBaseAlert(state, player);
     this._updateGroupPanel(state, player);
     this._updateLeaderboard(state);
-    this._updateMinimap(state);
+    this._updateMinimap(state, net?.camera);
     this._updateBuildPanel(state, player);
     this._updateSkillPanel(state, player);
   }
@@ -318,7 +319,24 @@ export class HUDRenderer {
   }
 
   // ── Minimap (limited: only your own base + squads; enemies stay hidden) ───────
-  _updateMinimap(state) {
+  /**
+   * Overview map.
+   *
+   * Two things matter here beyond the drawing itself:
+   *
+   *  1. It bails out entirely while the panel is collapsed. It is closed by
+   *     default and drawing a canvas nobody can see, sixty times a second, is
+   *     pure waste — and on a phone that waste comes out of the frame budget
+   *     the actual game needs.
+   *  2. It shows the VIEWPORT RECTANGLE. Without pinch-zoom the player sits at
+   *     one zoom and pans with a stick, so "where am I looking, relative to the
+   *     whole map" is genuinely hard to answer from the play view alone. The
+   *     rectangle is what makes this an orientation aid rather than decoration.
+   */
+  _updateMinimap(state, cam) {
+    // Collapsed → nothing is visible, so do nothing at all.
+    if (this._mmWrap?.classList.contains('collapsed')) return;
+
     const ctx = this._mmCtx;
     const W = this._mmCanvas.width;
     const H = this._mmCanvas.height;
@@ -364,6 +382,17 @@ export class HUDRenderer {
       ctx.arc(x * scale, y * scale, 4, 0, Math.PI * 2);
       ctx.fill();
       ctx.stroke();
+    }
+
+    // Where the camera is looking. Deliberately drawn LAST so it sits on top
+    // of everything else, and stroked only — a filled rect would hide the very
+    // dots the player opened the map to see.
+    if (cam?.zoom) {
+      const vw = (cam.width  / cam.zoom) * scale;
+      const vh = (cam.height / cam.zoom) * scale;
+      ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(cam.x * scale - vw / 2, cam.y * scale - vh / 2, vw, vh);
     }
   }
 }

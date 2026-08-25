@@ -27,7 +27,7 @@ services:
       # so Vite polls instead.
       - CHOKIDAR_USEPOLLING=true
       # Where the browser should look for the backend. In production this
-      # becomes a real domain like wss://eu1.nexus.io.
+      # becomes a real domain like wss://eu1.basewar.io.
       - VITE_SERVER_URL=ws://localhost:2567
     depends_on:
       - server

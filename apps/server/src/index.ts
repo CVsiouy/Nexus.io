@@ -89,7 +89,7 @@ const httpServer = http.createServer(async (req, res) => {
     return res.end(await renderMetrics());
   }
 
-  json(res, 404, { error: 'Nexus.io game server. Connect over WebSocket.' });
+  json(res, 404, { error: 'BaseWar.io game server. Connect over WebSocket.' });
 });
 
 function json(res: http.ServerResponse, status: number, body: unknown) {

@@ -7,10 +7,10 @@
  *
  * Run:  MATCHES=30 node apps/loadtest/src/simulate.mjs
  */
-import { Simulation, TICK_MS } from '@nexus/sim';
+import { Simulation, TICK_MS } from '@basewar/sim';
 import {
   GROUP_MAX_SIZE, GARRISON_MAX, WORLD_SIZE, POP_BASE, POP_PER_LEVEL,
-} from '@nexus/sim';
+} from '@basewar/sim';
 
 const MATCHES = Number(process.env.MATCHES ?? 30);
 const LIMIT_MS = Number(process.env.LIMIT_MS ?? 20 * 60 * 1000);

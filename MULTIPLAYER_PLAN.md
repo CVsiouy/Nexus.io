@@ -1,4 +1,4 @@
-# Nexus.io — Multiplayer Plan (Explained From Scratch)
+# BaseWar.io — Multiplayer Plan (Explained From Scratch)
 
 **What this document is:** a complete plan to turn your single-player game into an online multiplayer game, written so that someone who has never built a multiplayer game before can follow every decision and understand *why* it was made.
 
@@ -467,7 +467,7 @@ The lovely part, as Section 4.1 showed: your rules engine is **already** free of
 ### 6.3 The new folder structure
 
 ```
-nexus.io/
+basewar.io/
 ├── packages/
 │   ├── sim/              ← THE RULES ENGINE (moved from src/game)
 │   │   ├── constants.js       (unchanged)
@@ -957,7 +957,7 @@ This is why I recommend Hetzner or OVH over AWS. It isn't a small optimisation �
 
 Browsers require encrypted WebSocket connections (`wss://`) from any site served over HTTPS. So each game server needs a TLS certificate.
 
-Use **Caddy** — a web server that obtains and renews free Let's Encrypt certificates automatically, with about three lines of configuration. Give each game machine a subdomain (`eu1.nexus.io`, `eu2.nexus.io`) and Caddy handles the rest, forever.
+Use **Caddy** — a web server that obtains and renews free Let's Encrypt certificates automatically, with about three lines of configuration. Give each game machine a subdomain (`eu1.basewar.io`, `eu2.basewar.io`) and Caddy handles the rest, forever.
 
 ### 10.4 Monitoring — do not skip this
 
@@ -1042,10 +1042,10 @@ What remains:
               │                   │  every server posts its room list here
               └───────────────────┘
                         │
-     answer: "join room 4821 on eu3.nexus.io, here's your ticket"
+     answer: "join room 4821 on eu3.basewar.io, here's your ticket"
                         │
                         ▼
-       Player connects DIRECTLY to eu3.nexus.io
+       Player connects DIRECTLY to eu3.basewar.io
 ```
 
 **Redis** is a very fast in-memory database used here as a shared noticeboard. Each game server continuously posts "I'm running rooms 4821, 4822, 4823, with 3, 8, and 5 players." The matchmaker reads that noticeboard to answer join requests.

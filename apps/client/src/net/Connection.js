@@ -1,5 +1,5 @@
 import { Client } from 'colyseus.js';
-import { MSG, PROTOCOL_VERSION, LATENCY_PROBE_MS, decodeSnapshot } from '@nexus/protocol';
+import { MSG, PROTOCOL_VERSION, LATENCY_PROBE_MS, decodeSnapshot } from '@basewar/protocol';
 
 /**
  * Connection — how the client talks to whatever is running the game.
@@ -156,7 +156,7 @@ export class WebSocketConnection extends BaseConnection {
         this.bytesReceived += bytes?.byteLength ?? bytes?.length ?? 0;
         this._emit('snapshot', snap, performance.now());
       } catch (err) {
-        console.error('[nexus] could not decode a snapshot:', err);
+        console.error('[basewar] could not decode a snapshot:', err);
         this._emit('status', 'error', err?.message ?? 'bad snapshot');
       }
     });

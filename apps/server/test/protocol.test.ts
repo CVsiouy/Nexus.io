@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { validateCommand, MAX_GROUPS_PER_COMMAND } from '@nexus/protocol';
+import { validateCommand, MAX_GROUPS_PER_COMMAND } from '@basewar/protocol';
 
 /**
  * validateCommand is the front door: every one of these inputs could arrive
