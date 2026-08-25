@@ -1,5 +1,4 @@
 import { WORLD_SIZE } from '@basewar/sim';
-import { isTouchNow } from './touchDetect.js';
 
 /**
  * CameraController — the single owner of camera zoom and bounds.
@@ -39,8 +38,38 @@ import { isTouchNow } from './touchDetect.js';
 export const FIT_PLAY    = 0.98;   // in a match
 export const FIT_ATTRACT = 1.7;    // menu demo, deliberately zoomed in
 
-/** Touch play sits above the floor so targets are finger-sized. See below. */
-export const TOUCH_ZOOM_MULT = 1.8;
+/**
+ * How far ABOVE the fit floor a live match sits.
+ *
+ * `fitZoom(…, FIT_PLAY)` shows the entire map at once. That sounds desirable
+ * and plays badly: on any landscape screen the whole width is on screen, so
+ * there is nothing to pan left or right to, and every unit is drawn tiny. The
+ * match view should be a window onto the battlefield you move around, not a
+ * wall map you read.
+ *
+ * At 1.8 a landscape viewport shows roughly 57% of the world across, which
+ * leaves real room to move in both axes.
+ *
+ * This used to apply on touch only, and desktop sat at the bare fit — hence the
+ * complaint that the map was "too zoomed out" with only vertical panning. One
+ * multiplier for everyone also removes the bug class where a mis-detected
+ * device silently got the wrong zoom: there is no longer a device branch here
+ * at all. Finger-versus-mouse precision is handled where it belongs, by
+ * MIN_TOUCH_PX in hitTest.js, which is zoom-independent.
+ */
+export const PLAY_ZOOM_MULT = 1.8;
+
+/**
+ * How far past the world edge the camera may travel, as a fraction of the
+ * visible extent.
+ *
+ * Without this the map edge can never move inside the screen edge, so a base
+ * near the rim is permanently pinned against it — and on a phone that is
+ * exactly where the build strip and squad rail live, so your own base sits
+ * underneath the HUD with no way to shift it. A little overscroll lets you push
+ * the edge inward and put your base somewhere you can actually see it.
+ */
+export const OVERSCROLL = 0.25;
 
 export const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
@@ -58,11 +87,24 @@ export function zoomMin(width, height) {
 }
 
 /**
- * The highest zoom we allow. Four times the floor, but never so close that the
- * player loses all context — bounded in absolute terms as well as relative.
+ * The highest zoom we allow — enough context to still read the battlefield.
+ *
+ * The absolute ceiling has to clear PLAY_ZOOM_MULT, or the clamp would quietly
+ * undo the play zoom on large monitors: at 2560px wide the fit floor alone is
+ * 0.896, and 0.896 x 1.8 = 1.61 would have been clipped back to the old 1.2.
+ * The floor of the range is likewise raised so the ceiling is never below the
+ * zoom a match actually opens at.
  */
 export function zoomMax(width, height) {
-  return clamp(zoomMin(width, height) * 4, 0.9, 1.2);
+  const min = zoomMin(width, height);
+  // Four times the floor, capped at 2.0 — but NEVER below the zoom a match
+  // actually opens at, or the clamp in fit() would silently undo the zoom-in.
+  //
+  // Deliberately not written as clamp(min*4, min*PLAY, 2.0): in that helper the
+  // upper bound wins, so on an ultrawide monitor (floor 1.20, play zoom 2.17)
+  // the 2.0 cap would have clipped the play zoom back down — the very bug this
+  // line exists to prevent. The floor has to be applied last.
+  return Math.max(Math.min(min * 4, 2.0), min * PLAY_ZOOM_MULT);
 }
 
 /**
@@ -81,27 +123,21 @@ export function clampCamera(cam) {
   const hw = cam.width  / (2 * cam.zoom);
   const hh = cam.height / (2 * cam.zoom);
   const mid = WORLD_SIZE / 2;
-  cam.x = clamp(cam.x, Math.min(hw, mid), Math.max(WORLD_SIZE - hw, mid));
-  cam.y = clamp(cam.y, Math.min(hh, mid), Math.max(WORLD_SIZE - hh, mid));
+
+  // Slack past each edge, so a base on the rim can be pulled away from the
+  // screen edge (and out from under the HUD) instead of being pinned there.
+  const padX = hw * 2 * OVERSCROLL;
+  const padY = hh * 2 * OVERSCROLL;
+
+  cam.x = clamp(cam.x, Math.min(hw - padX, mid), Math.max(WORLD_SIZE - hw + padX, mid));
+  cam.y = clamp(cam.y, Math.min(hh - padY, mid), Math.max(WORLD_SIZE - hh + padY, mid));
 }
 
 export class CameraController {
-  /**
-   * @param {object} cam    the plain camera object owned by Game
-   * @param {object} [opts]
-   * @param {boolean} [opts.touch]  FORCE the touch play zoom on or off. Leave
-   *   undefined in the real app so `fit()` decides live; tests pass it
-   *   explicitly to pin one branch without needing a DOM.
-   */
-  constructor(cam, { touch } = {}) {
+  /** @param {object} cam  the plain camera object owned by Game */
+  constructor(cam) {
     this.cam = cam;
-    this.touch = touch;              // undefined === "decide at fit() time"
     this._resizeQueued = false;
-  }
-
-  /** Live where possible, overridden when a caller was explicit. */
-  _isTouch() {
-    return typeof this.touch === 'boolean' ? this.touch : isTouchNow();
   }
 
   get min() { return zoomMin(this.cam.width, this.cam.height); }
@@ -113,19 +149,16 @@ export class CameraController {
    */
   fit(k = FIT_PLAY) {
     const cam = this.cam;
-    // On touch there is no pinch gesture yet, so this one value is the entire
-    // zoom experience and it has to be picked for target size, not for overview.
-    // At FIT * 1.8 the 22px minimum touch radius maps to ~41 world units, which
-    // is about one squad's half-span — big enough to hit reliably, small enough
-    // that two adjacent squads never merge into one target.
+    // Only a live match is zoomed in past the fit. Attract mode has its own
+    // framing (FIT_ATTRACT) and must not be multiplied on top of it.
     //
-    // Asked LIVE, not read from a flag captured at construction. It used to be
-    // the latter, and the flag came from a module-level const evaluated at
-    // import time — so on any device where the media query did not fire at load
-    // (a tablet with a mouse, or Chrome device emulation, where the host mouse
-    // keeps `any-pointer: fine` matching) the multiplier silently never applied
-    // and the whole match rendered at 44% of the intended size.
-    const mult = (this._isTouch() && k === FIT_PLAY) ? TOUCH_ZOOM_MULT : 1;
+    // No device branch here, deliberately: it used to read a `touch` flag
+    // captured at construction from a module-level const evaluated at import
+    // time, so on any device where the media query did not fire at load — a
+    // tablet with a mouse, or Chrome device emulation, where the host mouse
+    // keeps `any-pointer: fine` matching — the multiplier silently never
+    // applied and the match rendered at 44% of the intended size.
+    const mult = (k === FIT_PLAY) ? PLAY_ZOOM_MULT : 1;
     cam.zoom = clamp(fitZoom(cam.width, cam.height, k) * mult, this.min, this.max);
     clampCamera(cam);
     return cam.zoom;

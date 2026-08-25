@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { WORLD_SIZE } from '@basewar/sim';
 import {
   fitZoom, zoomMin, zoomMax, clampCamera, CameraController, FIT_PLAY,
+  PLAY_ZOOM_MULT, OVERSCROLL,
 } from '../src/input/CameraController.js';
 
 /**
@@ -32,20 +33,49 @@ test('rotating a phone no longer changes the zoom floor', () => {
   assert.equal(fitZoom(390, 844, FIT_PLAY), fitZoom(844, 390, FIT_PLAY));
 });
 
-test('the clamp keeps the visible rect inside the world, not just its centre', () => {
-  // The old clamp bounded the camera CENTRE to [0, WORLD_SIZE], which allowed
-  // panning until the map was almost entirely off screen.
+test('the clamp bounds the visible RECT, allowing a measured overscroll', () => {
+  // Two things at once here.
+  //
+  // The old clamp bounded the camera CENTRE to [0, WORLD_SIZE], which let you
+  // pan until the map was almost entirely off screen. The rect is what matters.
+  //
+  // But the rect is NOT pinned flush to the world edge either: OVERSCROLL lets
+  // it travel a little further, so a base sitting on the rim can be pulled away
+  // from the screen edge instead of being trapped underneath the HUD. This
+  // asserts the slack exists AND that it is bounded — an unbounded version
+  // would just be the old centre-clamp bug again.
   for (const [w, h] of [[844, 390], [390, 844], [1920, 1080]]) {
-    const zoom = fitZoom(w, h, FIT_PLAY) * 1.8;
+    const zoom = fitZoom(w, h, FIT_PLAY) * PLAY_ZOOM_MULT;
+    const hw = w / (2 * zoom), hh = h / (2 * zoom);
+    const padX = hw * 2 * OVERSCROLL, padY = hh * 2 * OVERSCROLL;
+
     for (const [x, y] of [[-9999, -9999], [99999, 99999], [0, WORLD_SIZE]]) {
       const cam = { x, y, zoom, width: w, height: h };
       clampCamera(cam);
-      const hw = w / (2 * zoom), hh = h / (2 * zoom);
-      assert.ok(cam.x - hw >= -0.001 && cam.x + hw <= WORLD_SIZE + 0.001,
-        `x rect ${cam.x - hw}..${cam.x + hw} escaped the world`);
-      assert.ok(cam.y - hh >= -0.001 && cam.y + hh <= WORLD_SIZE + 0.001,
-        `y rect ${cam.y - hh}..${cam.y + hh} escaped the world`);
+      assert.ok(cam.x - hw >= -padX - 0.001 && cam.x + hw <= WORLD_SIZE + padX + 0.001,
+        `x rect ${cam.x - hw}..${cam.x + hw} escaped world+overscroll`);
+      assert.ok(cam.y - hh >= -padY - 0.001 && cam.y + hh <= WORLD_SIZE + padY + 0.001,
+        `y rect ${cam.y - hh}..${cam.y + hh} escaped world+overscroll`);
     }
+  }
+});
+
+test('overscroll can lift a rim base clear of the bottom of the screen', () => {
+  // The concrete complaint this exists for: your mother base spawns on the
+  // spawn ring, and if that is the bottom of the map it used to sit pinned
+  // under the build strip with no way to move it.
+  const RING_Y = WORLD_SIZE / 2 + WORLD_SIZE * 0.42;   // bottom-most spawn slot
+
+  for (const [w, h] of [[852, 393], [393, 852], [1366, 768]]) {
+    const zoom = Math.min(fitZoom(w, h, FIT_PLAY) * PLAY_ZOOM_MULT, zoomMax(w, h));
+    const cam = { x: WORLD_SIZE / 2, y: 99999, zoom, width: w, height: h };
+    clampCamera(cam);
+
+    // Where the base lands on screen once the camera is pushed fully down.
+    const screenY = h / 2 + (RING_Y - cam.y) * zoom;
+    const clearance = h - screenY;
+    assert.ok(clearance > 120,
+      `${w}x${h}: base only ${clearance.toFixed(0)}px above the bottom edge`);
   }
 });
 
@@ -86,47 +116,50 @@ test('an orientation flip preserves how far the player had zoomed in', () => {
     `zoom ratio changed ${ratioBefore} -> ${ratioAfter} on rotation`);
 });
 
-test('touch starts closer in than desktop, and inside the allowed range', () => {
-  const mk = (touch) => {
-    const cam = { x: 1400, y: 1400, zoom: 0, width: 390, height: 844 };
-    new CameraController(cam, { touch }).fit(FIT_PLAY);
-    return cam.zoom;
-  };
-  const desktop = mk(false), touch = mk(true);
-  assert.ok(touch > desktop, 'touch must start zoomed in for finger-sized targets');
-  assert.ok(touch <= zoomMax(390, 844) + 1e-9, 'and still within the clamp');
+test('a live match opens ZOOMED IN, not fitted to the whole map', () => {
+  // Fitting the whole map sounds desirable and plays badly: the entire world
+  // width is on screen, so there is nothing to pan left or right to. A match
+  // should be a window you move around the battlefield.
+  for (const [w, h] of [[1920, 1080], [1366, 768], [852, 393], [393, 852]]) {
+    const cam = { x: 1400, y: 1400, zoom: 0, width: w, height: h };
+    new CameraController(cam).fit(FIT_PLAY);
+
+    assert.ok(cam.zoom > fitZoom(w, h, FIT_PLAY) * 1.5,
+      `${w}x${h} opened at ${cam.zoom}, barely above the fit floor`);
+    assert.ok(cam.zoom <= zoomMax(w, h) + 1e-9, `${w}x${h} exceeded zoomMax`);
+
+    // The point of all of it: both axes must have somewhere to go.
+    const visW = (w / cam.zoom) / WORLD_SIZE;
+    assert.ok(visW < 0.85, `${w}x${h} still shows ${(visW * 100).toFixed(0)}% of the map width`);
+  }
 });
 
-test('the touch decision is made LIVE, not frozen at construction', () => {
-  // THE REGRESSION THIS LOCKS: `touch` used to be captured once, from a
-  // module-level const evaluated at import time. On any device where the media
-  // query did not fire at load — a tablet with a mouse attached, or Chrome's
-  // device emulation, where the host mouse keeps `any-pointer: fine` matching —
-  // the 1.8x touch multiplier silently never applied, and the entire match
-  // rendered at 44% of the intended size. Worse, nothing could recover it: a
-  // device that became touch-capable later kept desktop zoom all session.
-  //
-  // Driven through `document.body.classList`, which is the strongest evidence
-  // isTouchNow() consults and the one that survives a lying media query.
-  const body = globalThis.document?.body;
-  if (!body) return;                       // no DOM in this runner; nothing to assert
-
-  const had = body.classList.contains('touch');
-  const cam = { x: 1400, y: 1400, zoom: 0, width: 852, height: 393 };
-  const ctl = new CameraController(cam);   // no explicit touch → decide live
-
-  try {
-    body.classList.remove('touch');
-    ctl.fit(FIT_PLAY);
-    const withoutTouch = cam.zoom;
-
-    body.classList.add('touch');
-    ctl.fit(FIT_PLAY);
-    const withTouch = cam.zoom;
-
-    assert.ok(withTouch > withoutTouch * 1.7,
-      `the SAME controller must change its answer: ${withoutTouch} -> ${withTouch}`);
-  } finally {
-    if (had) body.classList.add('touch'); else body.classList.remove('touch');
+test('zoomMax always leaves room for the play zoom', () => {
+  // The ceiling used to be a flat 1.2, which on a large monitor was BELOW the
+  // zoom a match opens at — so the clamp silently undid the zoom-in. Any
+  // ceiling must clear the value fit() is about to ask for.
+  for (const [w, h] of [[1280, 720], [1920, 1080], [2560, 1440], [3440, 1440]]) {
+    assert.ok(zoomMax(w, h) >= zoomMin(w, h) * PLAY_ZOOM_MULT - 1e-9,
+      `${w}x${h}: max ${zoomMax(w, h)} < play zoom ${zoomMin(w, h) * PLAY_ZOOM_MULT}`);
   }
+});
+
+test('there is no device branch in the zoom at all', () => {
+  // The zoom used to depend on a touch flag captured at construction, from a
+  // module-level const evaluated at import time. On a device where the media
+  // query did not fire at load, the multiplier silently never applied and the
+  // match rendered at 44% of the intended size — with no way to recover.
+  //
+  // Removing the branch removes the whole bug class, so this asserts the
+  // absence: the same viewport must produce the same zoom no matter what the
+  // document claims about pointers.
+  const zoomFor = (touchClass) => {
+    const body = globalThis.document?.body;
+    if (body) { if (touchClass) body.classList.add('touch'); else body.classList.remove('touch'); }
+    const cam = { x: 1400, y: 1400, zoom: 0, width: 852, height: 393 };
+    new CameraController(cam).fit(FIT_PLAY);
+    return cam.zoom;
+  };
+  assert.equal(zoomFor(true), zoomFor(false),
+    'zoom must not depend on touch detection');
 });

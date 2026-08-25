@@ -1,5 +1,5 @@
 import {
-  LEVELS, WORLD_SIZE, SOLDIER_DEFS, TURRET_DEFS,
+  LEVELS, WORLD_SIZE, SOLDIER_DEFS, TURRET_DEFS, GARRISON_MAX,
   hexToCSS, goldRate, mineUpgradeCost,
 } from '@basewar/sim';
 import { MATCH_LIMIT_MS } from '@basewar/protocol';
@@ -50,6 +50,8 @@ export class HUDRenderer {
     this._buildBtns  = [...document.querySelectorAll('#build-panel .unit-btn')];
     this._turretBtns = [...document.querySelectorAll('#build-panel .turret-btn')];
     this._bpGold = document.getElementById('bp-gold');
+    this._bpGarrison = document.getElementById('bp-garrison');
+    this._bpPanel = document.getElementById('build-panel');
     this._mineBtn  = document.getElementById('mine-btn');
     this._mineCost = document.getElementById('mine-cost');
     this._mineLvl  = document.getElementById('mine-lvl');
@@ -221,6 +223,18 @@ export class HUDRenderer {
     this._prevBuildHash = hash;
 
     if (this._bpGold) this._bpGold.textContent = gold;
+
+    // Garrison: how many soldiers are waiting INSIDE the base. They are drawn
+    // nowhere on the map, so without this number "have I got anyone to
+    // release?" cannot be answered.
+    if (this._bpGarrison) {
+      this._bpGarrison.textContent = `${base.garrison}/${GARRISON_MAX}`;
+      this._bpGarrison.parentElement?.classList.toggle('empty', base.garrison === 0);
+    }
+
+    // Population: silent until the cap is actually reached, at which point
+    // queuing another soldier stops working and the player needs to know why.
+    this._bpPanel?.classList.toggle('pop-full', pop >= cap);
 
     // Mining upgrade button
     if (this._mineBtn) {

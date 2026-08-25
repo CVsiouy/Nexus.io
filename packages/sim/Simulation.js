@@ -93,12 +93,26 @@ export class Simulation {
     // Seat them as far as possible from whoever is currently strongest. Landing
     // next to a runaway leader is close to an instant loss, and that is a
     // miserable first impression for someone who just clicked Play.
+    //
+    // BUT ONLY ONCE THERE IS A REAL LEADER.
+    //
+    // At the start of a match every base has zero XP, so "strongest" was just
+    // whichever seat the Map happened to yield first — always p0 — and the
+    // farthest seat from p0 is always p4. Every single match therefore put the
+    // player on the same base at the bottom-centre of the map. The heuristic
+    // was not wrong, it simply had no signal to work with and quietly
+    // degenerated into a constant.
+    //
+    // Below this threshold nobody is meaningfully ahead, so seat at random and
+    // let the map feel different each time.
+    const LEADER_XP_MIN = 1;
+
     const strongest = [...this.state.players.values()]
       .filter(p => p.alive)
       .sort((a, b) => b.base.xpEarned - a.base.xpEarned)[0];
 
-    let pick = free[0];
-    if (strongest) {
+    let pick = free[Math.floor(Math.random() * free.length)];
+    if (strongest && strongest.base.xpEarned >= LEADER_XP_MIN) {
       let bestD = -Infinity;
       for (const p of free) {
         const d = dist2(p.base.position, strongest.base.position);

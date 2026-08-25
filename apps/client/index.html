@@ -186,12 +186,36 @@
     #build-panel { flex-direction: column; }
     #build-panel .panel-body { display: flex; align-items: stretch; gap: 6px; }
     /* Gold, the one readout that survived the handle deletion. */
-    #build-panel .bp-gold-line {
-      display: flex; align-items: baseline; justify-content: center; gap: 1px;
-      margin-bottom: 3px; font-family: 'Rajdhani', sans-serif; line-height: 1;
+    #build-panel .bp-stats-line {
+      display: flex; align-items: baseline; justify-content: center;
+      gap: 8px; margin-bottom: 3px;
+      font-family: 'Rajdhani', sans-serif; line-height: 1;
     }
-    #build-panel .bp-gold-line .bp-v { font-size: 15px; font-weight: 700; color: #b8860b; }
-    #build-panel .bp-gold-line .bp-g { font-size: 10px; font-weight: 700; color: #b8860b; opacity: .75; }
+    #build-panel .bp-chip { display: inline-flex; align-items: baseline; gap: 1px; }
+    #build-panel .bp-chip .bp-v { font-size: 14px; font-weight: 700; }
+    #build-panel .bp-gold .bp-v { color: #b8860b; }
+    #build-panel .bp-gold .bp-g { font-size: 10px; font-weight: 700; color: #b8860b; opacity: .75; }
+    #build-panel .bp-garr { font-size: 11px; }
+    #build-panel .bp-garr .bp-v { color: #3d5166; font-size: 13px; }
+    /* Garrison is only interesting once somebody is in it. */
+    #build-panel .bp-garr.empty { opacity: .45; }
+    /*
+     * The population warning is absent until the cap is actually reached.
+     *
+     * A permanent "12/31" is a number you learn to ignore, and it costs space
+     * on every frame to communicate nothing on almost all of them. What a
+     * player needs is to find out the moment queuing another soldier stops
+     * working — so it says nothing until then, and then says exactly that.
+     */
+    #build-panel .bp-cap {
+      display: none;
+      font-size: 9px; font-weight: 700; letter-spacing: 1px;
+      color: #fff; background: #dc2626;
+      border-radius: 8px; padding: 2px 6px;
+      animation: capPulse 1.4s ease-in-out infinite;
+    }
+    #build-panel.pop-full .bp-cap { display: inline-flex; }
+    @keyframes capPulse { 0%,100% { opacity: 1; } 50% { opacity: .55; } }
     /* Buffs point badge on the handle */
     #skill-panel .sk-pts-badge {
       background: #16a34a; color: #fff; border-radius: 10px;
@@ -1758,7 +1782,18 @@
       its own line — HUDRenderer writes to #bp-gold by id.
     -->
     <div id="build-panel" class="panel">
-      <div class="bp-gold-line"><span class="bp-v" id="bp-gold">0</span><span class="bp-g">g</span></div>
+      <!--
+        Gold, garrison, and a population warning that only exists when it
+        matters. Garrison is here because soldiers sitting inside the base are
+        invisible on the map — without a number, "do I have anyone to release?"
+        is unanswerable. Population is the opposite: the exact count is noise
+        until you hit the ceiling, so it shows nothing at all until then.
+      -->
+      <div class="bp-stats-line">
+        <span class="bp-chip bp-gold"><span class="bp-v" id="bp-gold">0</span><span class="bp-g">g</span></span>
+        <span class="bp-chip bp-garr" title="Soldiers waiting inside your base. Release them as a squad with R.">🏰&nbsp;<span class="bp-v" id="bp-garrison">0/15</span></span>
+        <span class="bp-chip bp-cap" id="bp-cap" title="Population cap reached — no more soldiers until some die or you level up.">POP&nbsp;FULL</span>
+      </div>
       <div class="panel-body">
       <div class="bp-section-lbl">Soldiers</div>
       <div class="unit-btn active" data-unit="grunt" data-lv="1" title="Your soldier. Build a squad and send it to war.">
