@@ -118,7 +118,6 @@ export class ProductionSystem {
     const y     = base.position.y + Math.sin(angle) * R;
     const turret = new Turret(state.newId(), player.id, type, base.id, x, y, angle);
     state.turrets.set(turret.id, turret);
-    state.notify(`🔧 ${type.toUpperCase()} turret mounted`, 'success', player.id);
   }
 
   // ── Spawn Protection ─────────────────────────────────────────────────────

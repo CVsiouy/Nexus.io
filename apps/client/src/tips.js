@@ -69,25 +69,25 @@ const TIPS = [
     kind: 'warn',
   },
   {
-    key: 'under-attack',
-    when: (w) => w.underAttack,
-    text: '🛡️ Your base is under attack. Soldiers standing around it shield it — mass them at home rather than spreading out.',
-    kind: 'warn',
-  },
-  {
     key: 'boss-up',
     when: (w) => w.bossAlive,
     text: '⭐ A boss has appeared in the centre. Killing it grants permanent gold per second — but it needs three or four squads, not one.',
     kind: 'info',
   },
-  {
-    key: 'wall-gap',
-    // A ring that has been started but left incomplete is the classic trap.
-    when: (w) => w.wallCells > 0 && w.wallGaps > 0,
-    text: '🧱 Your wall ring has a gap. Enemies will walk straight through it — a complete ring is worth far more than a longer broken one.',
-    kind: 'info',
-  },
 ];
+
+/*
+ * Two tips were removed deliberately, and the reasons are different:
+ *
+ *   `under-attack` — the base button already beams red the moment the base is
+ *   hit. A message that only restates something the HUD is already shouting is
+ *   pure noise, and it fires at the exact moment the player has least attention
+ *   to spare.
+ *
+ *   `wall-gap` — accurate but rarely actionable in the moment; the tutorial
+ *   covers it, and every message that is not worth reading makes the ones that
+ *   are worth reading less likely to be read.
+ */
 
 export class Tips {
   constructor(notify) {
@@ -168,14 +168,11 @@ export class Tips {
       }
     }
 
-    // A ring is "gapped" if it has cells but is not full.
-    let wallCells = 0, wallGaps = 0;
-    for (const layer of (base.walls ?? [])) {
-      const have = layer?.cells?.length ?? 0;
-      wallCells += have;
-      if (have > 0 && have < (layer.maxCells ?? have)) wallGaps += layer.maxCells - have;
-    }
-
+    // `underAttack`, `wallCells` and `wallGaps` used to be computed here for
+    // the two tips that have since been removed. The wall figures in
+    // particular meant walking every layer of every ring on every frame to
+    // decide something nothing asked about any more, so they went with their
+    // tips rather than being left as a view nobody reads.
     return {
       garrison: base.garrison ?? 0,
       pop: world.soldierPop?.(world.playerId) ?? 0,
@@ -183,10 +180,7 @@ export class Tips {
       smallestSquad: smallest,
       enemyNear,
       rivalFactionsInbound: rivals,
-      underAttack: (world.time - (base.lastAttackedAt ?? -Infinity)) < 2500,
       bossAlive: (world.bosses?.size ?? 0) > 0,
-      wallCells,
-      wallGaps,
     };
   }
 }

@@ -281,7 +281,6 @@ export class CombatSystem {
             state.wildlings.delete(best.id);
             state.freeId(best.id);
             state.event('explosion', { x: best.position.x, y: best.position.y, color: 0x8b5cf6 });
-            state.notify(`🐗 Wildling slain! +${WILDLING_XP_BOUNTY} XP`, 'success', sol.ownerId);
           } else {
             p.pendingXP += best.xpValue;
             state.eatables.delete(best.id);
@@ -347,22 +346,43 @@ export class CombatSystem {
 
     const before = target.hp;
     target.hp = Math.max(0, before - dmg);
-    if (targetIsBase) {
-      target.lastAttackerId = attacker.ownerId; // kill credit
-      target.lastAttackedAt = now;              // drives the "base under attack" blink
+    this._creditHit(state, attacker.ownerId, target, before, dmg, now);
+  }
+
+  /**
+   * Record who hit what, for kill credit and the XP split.
+   *
+   * Split out of _dealDamage because projectiles bypassed it entirely: they
+   * subtracted HP directly, so a turret that landed the killing blow on a boss
+   * left lastAttackerId pointing at whichever soldier hit it last — or at null,
+   * in which case the death sweep found no killer and NOBODY was paid at all.
+   * Same for base conquest credit and for soldier kill XP.
+   *
+   * Credit is recorded only when the target was still alive before this hit.
+   * Deaths are reaped at the END of the tick, so without that guard every
+   * attacker still swinging at the corpse overwrote the real killer, and the
+   * reward went to whoever happened to resolve last rather than to whoever
+   * actually landed the killing blow.
+   */
+  _creditHit(state, ownerId, target, before, dmg, now) {
+    if (before <= 0) return;
+
+    if (state.bases.has(target.id)) {
+      target.lastAttackerId = ownerId;  // kill credit
+      target.lastAttackedAt = now;      // drives the "base under attack" blink
     }
 
     // Big XP for killing an enemy soldier (drives leveling → unlocks).
-    if (targetIsSoldier && before > 0 && target.hp <= 0) {
-      const ap = state.players.get(attacker.ownerId);
+    if (state.soldiers.has(target.id) && target.hp <= 0) {
+      const ap = state.players.get(ownerId);
       if (ap) ap.pendingXP += KILL_XP;
     }
 
-    const bossTarget = state.bosses.get(target.id);
-    if (bossTarget) {
-      bossTarget.contrib.set(attacker.ownerId, (bossTarget.contrib.get(attacker.ownerId) || 0) + dmg);
-      bossTarget.lastAttackerId = attacker.ownerId;   // who gets the kill credit
-      bossTarget.lastAttackedAt = now;
+    const boss = state.bosses.get(target.id);
+    if (boss) {
+      boss.contrib.set(ownerId, (boss.contrib.get(ownerId) || 0) + dmg);
+      boss.lastAttackerId = ownerId;
+      boss.lastAttackedAt = now;
     }
   }
 
@@ -390,6 +410,7 @@ export class CombatSystem {
   // ── Projectiles ────────────────────────────────────────────────────────────
   _moveProjectiles(state, dt, dtMs) {
     const HIT_R = 12;
+    const now = state.time;
     for (const [id, p] of state.projectiles) {
       p.position.x += p.vx * dt;
       p.position.y += p.vy * dt;
@@ -401,17 +422,25 @@ export class CombatSystem {
       );
 
       if (hit) {
+        // Projectile damage goes through the same credit bookkeeping as a
+        // melee hit. It used to subtract HP and nothing else, so a turret
+        // could land the killing blow on a boss and leave the reward pointing
+        // at a stale attacker — or at nobody, if a turret had done all of it.
         if (p.splash > 0) {
           const sp2 = p.splash * p.splash;
           state.grid.forEachNear(p.position.x, p.position.y, p.splash, (e) => {
             if (e.ownerId === p.ownerId || e.hp <= 0) return;
             if (dist2(p.position, e.position) < sp2) {
-              e.hp = Math.max(0, e.hp - p.damage);
+              const before = e.hp;
+              e.hp = Math.max(0, before - p.damage);
+              this._creditHit(state, p.ownerId, e, before, p.damage, now);
             }
           });
           state.event('explosion', { x: p.position.x, y: p.position.y, color: p.color });
         } else {
-          hit.hp = Math.max(0, hit.hp - p.damage);
+          const before = hit.hp;
+          hit.hp = Math.max(0, before - p.damage);
+          this._creditHit(state, p.ownerId, hit, before, p.damage, now);
         }
         state.projectiles.delete(id);
         state.freeId(id);
@@ -488,7 +517,6 @@ export class CombatSystem {
 
         killer.base.bossBonus = (killer.base.bossBonus ?? 0) + reward;
         killer.pendingXP += BOSS_XP_REWARD;
-        state.notify(`🏆 Boss slain! +${reward} gold/sec for the rest of the match`, 'success', killer.id);
       }
 
       // Everyone who helped gets XP — bosses are meant to draw a crowd.

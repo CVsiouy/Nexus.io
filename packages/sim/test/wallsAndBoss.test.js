@@ -340,3 +340,33 @@ test('bots do commit to bosses, and bosses are beatable', () => {
   assert.ok(spawned > 0, 'no bosses spawned at all');
   assert.ok(killed > 0, `bots never killed a boss (${killed}/${spawned}) — it is not beatable`);
 });
+
+test('boss kill credit stays with the killing blow, not the last swing of the tick', () => {
+  // Deaths are reaped at the END of the tick, so every attacker still swinging
+  // at a boss keeps landing hits on the corpse first. Credit used to be
+  // overwritten by each of them, which handed the reward to whoever happened
+  // to resolve last — the reason the boss bonus seemed to arrive at random.
+  const sim = new Simulation({ mode: 'ffa', logger: quiet });
+  run(sim, (BOSS_FIRST_MS / 1000) + 5);
+
+  const boss   = [...sim.state.bosses.values()][0];
+  const combat = sim._systems.combat;
+  const [a, b] = [...sim.state.players.keys()];
+  assert.ok(a && b, 'expected at least two players');
+
+  const blow = { ownerId: a, damage: boss.hp, groupId: null, type: 'grunt' };
+  const late = { ownerId: b, damage: 500,     groupId: null, type: 'grunt' };
+
+  combat._dealDamage(sim.state, blow, boss, 0, false);
+  assert.equal(boss.hp, 0, 'the first hit should have killed the boss');
+  assert.equal(boss.lastAttackerId, a, 'the killing blow was not credited');
+
+  combat._dealDamage(sim.state, late, boss, 0, false);
+  assert.equal(boss.lastAttackerId, a, 'a hit on a corpse stole the kill credit');
+  assert.ok(!boss.contrib.has(b), 'damage to a corpse counted toward the XP split');
+
+  // And the reward must follow the real killer through the death sweep.
+  sim.step(TICK_MS);
+  assert.equal(sim.state.players.get(a).base.bossBonus, BOSS_GOLD_REWARD);
+  assert.equal(sim.state.players.get(b).base.bossBonus, 0, 'the corpse-hitter was paid');
+});

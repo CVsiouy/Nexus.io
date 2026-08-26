@@ -206,9 +206,15 @@ export function initTutorial() {
     if (e.key === 'ArrowLeft')  prev.click();
   }, true);   // capture: Escape must not also reach the game's pause handler
 
-  // First visit opens it unprompted. Someone who has played before does not
-  // want to dismiss the same cards every time they load the page.
-  let seen = false;
-  try { seen = localStorage.getItem(SEEN_KEY) === '1'; } catch { /* ignore */ }
-  if (!seen) open();
+  // The tutorial never opens by itself.
+  //
+  // It used to open on a first visit, which is the conventional choice and was
+  // wrong here: the menu already runs a live match behind it, so the first
+  // thing a new player saw was a wall of text covering the one thing that
+  // actually sells the game. Anyone who wants it can reach it from
+  // 📖 HOW TO PLAY, which is on the menu and never moves.
+  //
+  // SEEN_KEY is still written on close. Nothing reads it today, but it is the
+  // record of who has already been through the cards, and throwing that away
+  // would make any future "offer this once" idea start from nothing.
 }

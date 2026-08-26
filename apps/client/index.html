@@ -120,19 +120,42 @@
     }
 
     /*
+     * ─── HUD surface tints ───
+     *
+     * Every translucent white background in the HUD comes from here, on :root
+     * rather than #hud so the values are reachable from anywhere in the page.
+     *
+     * These used to be a dozen rgba() literals scattered across the file, which
+     * made "a bit more transparent" a dozen-site edit that was easy to do
+     * unevenly — and this is the fourth time that adjustment has been asked
+     * for. Now it is one block. Keep the ratios between the tiers when
+     * changing them: they encode how loud each surface is meant to be, and
+     * flattening them makes the big action circles and the quiet build strip
+     * read as the same kind of thing.
+     *
+     * The blur is what makes any of this work rather than just looking washed
+     * out: it keeps text legible over busy ground with no opaque backing.
+     */
+    :root {
+      --btn-bg:        rgba(255,255,255,0.34);  /* panels, collapsed corner squares */
+      --btn-bg-hover:  rgba(255,255,255,0.50);
+      --btn-bg-strong: rgba(255,255,255,0.66);  /* the big touch action circles */
+      --btn-bg-soft:   rgba(255,255,255,0.32);  /* build buttons, squad rail rows */
+      --btn-bg-mid:    rgba(255,255,255,0.44);  /* desktop command bar */
+      --btn-bg-active: rgba(234,245,255,0.60);  /* selected build button */
+    }
+
+    /*
      * ─── Shared panel style ───
      *
      * Semi-transparent on EVERY screen, not just phones. These panels sit on
      * top of the battlefield, and at the old 0.88 opacity each one was a solid
      * white card punched out of the map — you lost whatever was underneath.
-     * At 0.42 with a blur behind it, the map still reads through and the HUD
-     * stops competing with the thing it is describing.
-     *
-     * The blur is what makes this work rather than just looking washed out: it
-     * keeps text legible over busy ground without needing an opaque backing.
+     * Now the map still reads through and the HUD stops competing with the
+     * thing it is describing.
      */
     .panel {
-      background: rgba(255,255,255,0.42);
+      background: var(--btn-bg);
       border: 1.5px solid rgba(255,255,255,0.5);
       border-radius: 12px;
       backdrop-filter: blur(7px);
@@ -178,7 +201,7 @@
       user-select: none;
     }
     .collapsible.collapsed {
-      background: rgba(255,255,255,0.42);
+      background: var(--btn-bg);
       box-shadow: 0 1px 5px rgba(0,0,0,0.06);
       padding: 8px 12px !important;
       min-width: 0 !important;
@@ -195,7 +218,7 @@
       margin-left: auto; font-size: 9px; color: #aeb9c6; font-weight: 600;
       border: 1px solid #d7dee6; border-radius: 4px; padding: 0 4px;
     }
-    .collapsible.collapsed:hover { background: rgba(255,255,255,0.72); }
+    .collapsible.collapsed:hover { background: var(--btn-bg-hover); }
     /* Build panel is a plain column now: gold line above, buttons below. */
     #build-panel { flex-direction: column; }
     #build-panel .panel-body { display: flex; align-items: stretch; gap: 6px; }
@@ -353,13 +376,13 @@
       padding: 5px 8px;
       display: flex; align-items: stretch; gap: 5px;
       pointer-events: all;
-      background: rgba(255,255,255,0.55);   /* slimmer + semi-transparent */
+      background: var(--btn-bg-mid);   /* slimmer + semi-transparent */
       backdrop-filter: blur(5px);
     }
     /* Slimmer build buttons */
     #build-panel .unit-btn, #build-panel .econ-btn, #build-panel .turret-btn {
       min-width: 54px; padding: 4px 7px; border-radius: 8px;
-      background: rgba(255,255,255,0.55);
+      background: var(--btn-bg-mid);
     }
     #build-panel .unit-btn .u-icon, #build-panel .econ-btn .u-icon, #build-panel .turret-btn .u-icon { font-size: 15px; }
     #build-panel .u-name { font-size: 9px; }
@@ -369,15 +392,15 @@
        Matches the look of the mobile build buttons, which is the reference:
        a light translucent tile, no hard border, map visible through it. */
     .unit-btn, .econ-btn, .turret-btn, .cmd-btn {
-      background: rgba(255,255,255,0.42) !important;
+      background: var(--btn-bg) !important;
       border-color: rgba(255,255,255,0.55);
     }
     .unit-btn.active, .econ-btn.active {
       background: rgba(234,245,255,0.72) !important; border-color: #0077cc;
     }
     .unit-btn.locked, .econ-btn.locked { background: rgba(241,244,247,0.5) !important; }
-    .collapsible.collapsed { background: rgba(255,255,255,0.42); }
-    .collapsible.collapsed:hover { background: rgba(255,255,255,0.62); }
+    .collapsible.collapsed { background: var(--btn-bg); }
+    .collapsible.collapsed:hover { background: var(--btn-bg-hover); }
     #build-panel { background: none; border: none; box-shadow: none; backdrop-filter: none; }
 
     /*
@@ -1062,9 +1085,9 @@
       pointer-events: all; cursor: pointer;
       display: flex; flex-direction: column; align-items: center;
       padding: 6px 4px; border-radius: 9px; border: 1.5px solid transparent;
-      background: rgba(255,255,255,0.4); transition: all .12s ease;
+      background: var(--btn-bg-soft); transition: all .12s ease;
     }
-    .group-entry:hover { background: rgba(255,255,255,0.8); border-color: #cfe0ef; }
+    .group-entry:hover { background: var(--btn-bg-strong); border-color: #cfe0ef; }
     .group-entry.sel { border-color: #0077cc; background: #eaf5ff; }
     .group-entry.locked { opacity: 0.85; }
     .group-entry.ready { border-color: #16a34a; box-shadow: 0 0 0 2px rgba(22,163,74,0.25); }
@@ -1190,7 +1213,7 @@
     #joystick.active { opacity: 1; }
     #joystick .js-ring {
       position: absolute; inset: 0; border-radius: 50%;
-      background: rgba(255,255,255,0.42);
+      background: var(--btn-bg);
       border: 1.5px solid rgba(0,0,0,0.12);
       box-shadow: 0 2px 10px rgba(0,0,0,0.12);
       backdrop-filter: blur(6px);
@@ -1348,11 +1371,11 @@
       #build-panel .unit-btn,
       #build-panel .econ-btn {
         min-width: 52px; padding: 4px 3px; border-radius: 9px;
-        background: rgba(255,255,255,0.40);
+        background: var(--btn-bg-soft);
         border: 1.5px solid transparent;
       }
       #build-panel .unit-btn.active,
-      #build-panel .econ-btn.active { border-color: #0077cc; background: rgba(234,245,255,0.75); }
+      #build-panel .econ-btn.active { border-color: #0077cc; background: var(--btn-bg-active); }
       #build-panel .unit-btn .u-icon,
       #build-panel .econ-btn .u-icon { font-size: 17px; }
       #build-panel .u-name { font-size: 8px; }
@@ -1390,7 +1413,7 @@
            With only the icon left, it would sit at the top of the circle. */
         justify-content: center;
         padding: 0; gap: 0;
-        background: rgba(255,255,255,0.82);
+        background: var(--btn-bg-strong);
         border: 1.5px solid rgba(0,0,0,0.10);
         box-shadow: 0 3px 14px rgba(0,0,0,0.18);
         backdrop-filter: blur(6px);
@@ -1504,10 +1527,22 @@
       .unit-btn, .econ-btn { min-width: 56px; }
 
       /* ── Notifications: above the stick, capped ──────────────────────── */
+      /*
+       * Messages sit in the middle of the RIGHT edge on a phone.
+       *
+       * Bottom-left put them straight under the joystick and the build strip,
+       * where the two things competing for that space are both things the
+       * player is actively touching — so the message was covered exactly when
+       * it appeared. The right edge at half height is the one band that is
+       * empty by construction: the corner icon squares end around y=60 and the
+       * action circles start around y=317 on an 852x393 screen.
+       */
       #notifs {
-        left: calc(var(--gut-l) + var(--rail-w) + 6px);
-        bottom: calc(var(--gut-b) + 6px);
-        max-width: 180px;
+        left: auto; right: var(--gut-r);
+        top: 50%; bottom: auto;
+        transform: translateY(-50%);
+        align-items: flex-end;
+        max-width: 44vw;
       }
       #notifs .notif:nth-child(n+3) { display: none; }
       .notif { white-space: normal; font-size: 10px; }
@@ -1536,7 +1571,7 @@
       .cmd-btn {
         width: 58px; height: 58px; min-width: 0; min-height: 0;
         border-radius: 50%; justify-content: center; padding: 0; gap: 0;
-        background: rgba(255,255,255,0.82);
+        background: var(--btn-bg-strong);
         border: 1.5px solid rgba(0,0,0,0.10);
         box-shadow: 0 3px 14px rgba(0,0,0,0.18);
         backdrop-filter: blur(6px);
@@ -1604,9 +1639,14 @@
       #build-panel .bp-section-lbl { display: none; }
       .unit-btn, .econ-btn { min-width: 62px; }
 
+      /* Same reasoning as landscape — see the note in T2. Portrait is narrow,
+         so the cap is a share of the width rather than a fixed box. */
       #notifs {
-        left: var(--gut-l); right: var(--gut-r); max-width: none;
-        bottom: calc(var(--gut-b) + var(--rail-h) + 196px);
+        left: auto; right: var(--gut-r);
+        top: 50%; bottom: auto;
+        transform: translateY(-50%);
+        align-items: flex-end;
+        max-width: 62vw;
       }
       #notifs .notif:nth-child(n+3) { display: none; }
       .notif { white-space: normal; font-size: 10px; }
@@ -1767,7 +1807,21 @@
       box-shadow: 0 12px 40px rgba(0,0,0,0.3);
       display: flex; flex-direction: column;
       overflow: hidden;
-      max-height: 100%;
+      /*
+       * FIXED height, not max-height.
+       *
+       * With max-height the card shrank to each card's content, so the header,
+       * the dots and the Next button all jumped to a new position on every
+       * page — the button you are about to press again moves out from under
+       * your finger, which is the worst possible thing for a control you press
+       * eight times in a row.
+       *
+       * A fixed box means only .tut-body scrolls (it already has overflow-y
+       * and min-height: 0 for exactly that), and every chrome element stays
+       * still. 560px comfortably fits the longest card; on a short screen the
+       * 100% clamp takes over and the body simply scrolls a little more.
+       */
+      height: min(560px, 100%);
     }
     .tut-head {
       display: flex; align-items: center; justify-content: space-between;

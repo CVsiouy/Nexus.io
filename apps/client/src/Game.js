@@ -11,6 +11,33 @@ import { isTypingInto } from './dom.js';
  * different host, not just a different port.
  */
 const SERVER_URL = import.meta.env?.VITE_SERVER_URL ?? 'ws://localhost:2567';
+
+/**
+ * The size the canvas should actually be, in CSS pixels.
+ *
+ * NOT `window.innerHeight`. On a phone with `viewport-fit=cover` that is the
+ * LAYOUT viewport, which extends underneath the browser's own toolbars, and it
+ * is bigger than what the player can see. Because PixiJS runs with
+ * `autoDensity: true` it writes an INLINE `style.height` onto the canvas from
+ * whatever it is resized to — and an inline style beats the stylesheet, so it
+ * silently overrode `#app { height: 100dvh }`. The canvas then hung below the
+ * visible area and the bottom strip of the map sat behind the browser chrome.
+ *
+ * This is invisible in desktop device emulation, which draws no browser chrome
+ * and therefore reports innerHeight == the visible height. It only reproduces
+ * on real hardware, which is why it survived the mobile pass.
+ *
+ * `#app` is already sized by CSS to `100dvh`, so its clientHeight IS the
+ * visible height — asking the element means JS and CSS can no longer disagree.
+ * The fallbacks are for the moment before the element exists.
+ */
+function viewportSize() {
+  const el = document.getElementById('app');
+  return {
+    w: el?.clientWidth  || window.innerWidth,
+    h: el?.clientHeight || window.visualViewport?.height || window.innerHeight,
+  };
+}
 import { WorldView } from './net/WorldView.js';
 import { Selection } from './Selection.js';
 import { InputSystem } from './input/InputSystem.js';
@@ -79,7 +106,8 @@ export class Game {
     const r = this._app?.renderer;
     if (!r) return;
     r.resolution = opts.resolution;
-    r.resize(window.innerWidth, window.innerHeight);
+    const { w, h } = viewportSize();
+    r.resize(w, h);
     this._input?.invalidateCanvasRect();
   }
 
@@ -88,9 +116,12 @@ export class Game {
     // creation. A phone reporting devicePixelRatio 3 would otherwise render at
     // 2x WITH multisampling, which is most of a mid-range mobile GPU budget.
     const q = qualityOpts(readQuality());
+    // #app is already laid out by CSS at this point, so its box is the honest
+    // one to build against — see viewportSize().
+    const view0 = viewportSize();
     this._app = new PIXI.Application({
-      width: window.innerWidth,
-      height: window.innerHeight,
+      width: view0.w,
+      height: view0.h,
       backgroundColor: 0xf4f4f4,
       antialias: q.antialias,
       resolution: q.resolution,
@@ -102,8 +133,8 @@ export class Game {
       x: WORLD_SIZE / 2,
       y: WORLD_SIZE / 2,
       zoom: 1,
-      width: window.innerWidth,
-      height: window.innerHeight,
+      width: view0.w,
+      height: view0.h,
       focusType: 'free',
       focusId: null,
     };
@@ -157,16 +188,20 @@ export class Game {
     let resizeQueued = false;
     const applyResize = () => {
       resizeQueued = false;
-      const w = window.innerWidth;
-      const h = window.innerHeight;
 
       // An on-screen keyboard shrinks the visual viewport dramatically. Treat
       // that as "a text field is open", not as a real layout change — resizing
       // the canvas to the keyboard-reduced height and back is both expensive
       // and visibly ugly.
+      //
+      // This check deliberately still measures against window.innerHeight, the
+      // LAYOUT viewport, because that is the thing a keyboard does not move —
+      // it is the fixed baseline the shrunken visual viewport is compared to.
+      // Only the resize itself uses viewportSize().
       const vv = window.visualViewport;
-      if (vv && vv.height < h * 0.75) return;
+      if (vv && vv.height < window.innerHeight * 0.75) return;
 
+      const { w, h } = viewportSize();
       this._app.renderer.resize(w, h);
       this._cameraCtl.onViewportResize(w, h);
       this._input.invalidateCanvasRect();
