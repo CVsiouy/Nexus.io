@@ -1,0 +1,10 @@
+# basewar.io
+#
+# One page, nothing private, nothing to keep out. The point of this file is
+# less about blocking and more about pointing crawlers at the sitemap — without
+# it they find the site only by following links.
+
+User-agent: *
+Allow: /
+
+Sitemap: https://basewar.io/sitemap.xml

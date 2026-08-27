@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <defs>
+    <!-- The same grid the game draws, at the same relative weight. -->
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M40 0H0V40" fill="none" stroke="#e3e8ee" stroke-width="1.5"/>
+    </pattern>
+    <radialGradient id="vign" cx="50%" cy="45%" r="75%">
+      <stop offset="55%" stop-color="#f4f4f4" stop-opacity="0"/>
+      <stop offset="100%" stop-color="#d8dee6" stop-opacity="1"/>
+    </radialGradient>
+  </defs>
+
+  <rect width="1200" height="630" fill="#f4f4f4"/>
+  <rect width="1200" height="630" fill="url(#grid)"/>
+  <rect width="1200" height="630" fill="url(#vign)"/>
+
+  <!-- Two rival bases, mid-approach: the whole game in one picture. -->
+  <g opacity="0.95">
+    <circle cx="205" cy="205" r="86" fill="none" stroke="#0077cc" stroke-width="4" opacity="0.28"/>
+    <circle cx="205" cy="205" r="42" fill="none" stroke="#0077cc" stroke-width="9"/>
+    <circle cx="205" cy="205" r="17" fill="#16a34a"/>
+  </g>
+  <!-- Kept clear of the wordmark band (roughly y 430-560): the two must not
+       overlap, or the title stops being readable at thumbnail size. -->
+  <g opacity="0.95">
+    <circle cx="1012" cy="228" r="80" fill="none" stroke="#dc2626" stroke-width="4" opacity="0.26"/>
+    <circle cx="1012" cy="228" r="40" fill="none" stroke="#dc2626" stroke-width="8"/>
+    <circle cx="1012" cy="228" r="16" fill="#7f1d1d"/>
+  </g>
+
+  <!-- A squad crossing between them. Fifteen, because that is the rule. -->
+  <g fill="#0077cc">
+    <circle cx="330" cy="292" r="7"/><circle cx="362" cy="279" r="7"/><circle cx="394" cy="300" r="7"/>
+    <circle cx="352" cy="316" r="7"/><circle cx="318" cy="258" r="7"/><circle cx="386" cy="262" r="7"/>
+    <circle cx="424" cy="284" r="7"/>
+  </g>
+  <g fill="#dc2626">
+    <circle cx="872" cy="268" r="7"/><circle cx="904" cy="252" r="7"/><circle cx="842" cy="244" r="7"/>
+    <circle cx="888" cy="296" r="7"/><circle cx="836" cy="288" r="7"/>
+  </g>
+
+  <!-- The boss, drawn as the diamond it now is on the map. -->
+  <g transform="translate(620 250)">
+    <circle r="58" fill="none" stroke="#cc8800" stroke-width="3" opacity="0.5"/>
+    <polygon points="0,-40 45,0 0,40 -45,0" fill="#e8b923" stroke="#4a3708" stroke-width="5"/>
+  </g>
+
+  <text x="600" y="500" text-anchor="middle"
+        font-family="Rajdhani, 'Segoe UI', Arial, sans-serif"
+        font-size="94" font-weight="700" letter-spacing="3" fill="#1a2a40">BASEWAR<tspan fill="#0077cc">.IO</tspan></text>
+  <text x="600" y="551" text-anchor="middle"
+        font-family="Rajdhani, 'Segoe UI', Arial, sans-serif"
+        font-size="30" font-weight="600" letter-spacing="5" fill="#64748b">BUILD · WALL · CONQUER</text>
+</svg>

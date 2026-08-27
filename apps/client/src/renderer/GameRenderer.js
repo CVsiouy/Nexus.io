@@ -547,11 +547,11 @@ export class GameRenderer {
       g.moveTo(x - R * 0.42, y); g.lineTo(x + R * 0.42, y);
       g.lineStyle(0);
     } else {
-      g.beginFill(0x3a2c06, 1);
+      // One solid black core. There was a second, smaller gold disc inside it,
+      // which at real zoom just made the middle look muddy — the black against
+      // the gold spikes is the whole read.
+      g.beginFill(0x000000, 1);
       g.drawCircle(x, y, R * 0.42);
-      g.endFill();
-      g.beginFill(0xe8b923, 1);
-      g.drawCircle(x, y, R * 0.16);
       g.endFill();
     }
 
@@ -564,17 +564,20 @@ export class GameRenderer {
     g.endFill();
   }
 
-  /** Boss 0: a tall faceted crystal — treasure worth taking. */
+  /**
+   * Boss 0: a diamond.
+   *
+   * Was a six-sided crystal. Four points read better at the size this is
+   * actually seen: fewer edges means the silhouette survives being small, and a
+   * hexagon at a glance is just a blob. Slightly wider than tall so it does not
+   * read as a mining node, which is the round thing it sits near.
+   */
   _drawBossCrystal(g, cx, cy, r) {
-    const w = r * 0.62;          // shoulder half-width
-    const sh = r * 0.34;         // where the shoulders sit, above centre
     g.drawPolygon([
-      cx,     cy - r,            // apex
-      cx + w, cy - sh,
-      cx + w * 0.78, cy + r * 0.46,
-      cx,     cy + r,            // base point
-      cx - w * 0.78, cy + r * 0.46,
-      cx - w, cy - sh,
+      cx,            cy - r,       // top
+      cx + r * 1.12, cy,           // right
+      cx,            cy + r,       // bottom
+      cx - r * 1.12, cy,           // left
     ]);
   }
 

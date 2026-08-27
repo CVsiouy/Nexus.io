@@ -27,7 +27,66 @@
   <meta property="og:type" content="website">
   <meta property="og:title" content="BaseWar.io — Mother Base War">
   <meta property="og:description" content="Command squads, wall your base, and destroy every rival mother base. A fast .io strategy game.">
-  <meta name="twitter:card" content="summary">
+  <!--
+    CANONICAL. basewar.io and www.basewar.io both resolve and both serve this
+    page, so without this they compete as duplicates of each other and split
+    whatever ranking the site earns. Absolute, and pointing at the apex.
+  -->
+  <link rel="canonical" href="https://basewar.io/">
+
+  <!-- summary_large_image, not summary: a 1200x630 card is the difference
+       between a shared link showing a postage stamp and showing the game. -->
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="BaseWar.io — Mother Base War">
+  <meta name="twitter:description" content="Command squads, wall your base, and destroy every rival mother base. A fast .io strategy game.">
+  <meta name="twitter:image" content="https://basewar.io/og-card.png">
+
+  <meta property="og:site_name" content="BaseWar.io">
+  <meta property="og:url" content="https://basewar.io/">
+  <meta property="og:locale" content="en_US">
+  <!-- Absolute URLs: most scrapers do not resolve relative ones. -->
+  <meta property="og:image" content="https://basewar.io/og-card.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="Two rival mother bases and a boss on the BaseWar.io battlefield">
+
+  <!-- Icons. The inline SVG above stays as the instant-paint favicon; these are
+       what a phone uses when the game is added to a home screen. -->
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="manifest" href="/manifest.json">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="BaseWar">
+
+  <!--
+    Structured data. VideoGame is the schema search engines actually read for
+    games; without it the page is just text to them. Kept honest — every claim
+    here is true of the built game, because a rich result that misdescribes the
+    thing is worse than none.
+  -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "VideoGame",
+    "name": "BaseWar.io",
+    "url": "https://basewar.io/",
+    "image": "https://basewar.io/og-card.png",
+    "description": "A fast multiplayer .io strategy game. Train squads of fifteen, ring your mother base with walls, hunt the boss for permanent income, and destroy every rival base.",
+    "genre": ["Strategy", "Multiplayer", "IO game"],
+    "playMode": ["MultiPlayer", "SinglePlayer"],
+    "applicationCategory": "Game",
+    "gamePlatform": "Web browser",
+    "operatingSystem": "Any (web browser)",
+    "browserRequirements": "Requires a browser with WebGL",
+    "inLanguage": "en",
+    "offers": {
+      "@type": "Offer",
+      "price": "0",
+      "priceCurrency": "USD",
+      "availability": "https://schema.org/InStock"
+    }
+  }
+  </script>
+
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <!-- The stylesheet is on googleapis, but the font FILES come from gstatic.
        Preconnecting to only the first leaves the slower hop uncovered. -->
@@ -504,24 +563,18 @@
      * nothing.
      */
     .u-cancel {
-      position: absolute; top: -18px; left: -10px; z-index: 4;
-      width: 28px; height: 28px; border-radius: 50%;
+      position: absolute; top: -22px; left: -14px; z-index: 4;
+      /* A REAL 40px element, not a 28px one wearing a 44px ::after pad.
+         The pad expanded the paint box but did not reliably take the touch, so
+         short taps kept landing on the parent button and only a long-press —
+         which fires contextmenu, also -1 — appeared to work. Anything relying
+         on a pseudo-element for its hit area is a guess; this is not. */
+      width: 40px; height: 40px; border-radius: 50%;
       display: none; align-items: center; justify-content: center;
       padding: 0; line-height: 1;
-      border: 1.5px solid #fff; background: #64748b; color: #fff;
-      font-size: 16px; font-weight: 700; cursor: pointer;
-      pointer-events: auto; box-shadow: 0 1px 4px rgba(0,0,0,0.3);
-    }
-    /*
-     * The real touch target. It lives INSIDE .u-cancel, not beside it, so
-     * `display: none` takes the pad away with the glyph — a separately
-     * positioned pad would keep swallowing taps above the build strip on every
-     * button that has nothing queued.
-     */
-    .u-cancel::after {
-      content: ''; position: absolute;
-      top: 50%; left: 50%; transform: translate(-50%, -50%);
-      width: 44px; height: 44px;
+      border: 2px solid #fff; background: #64748b; color: #fff;
+      font-size: 20px; font-weight: 700; cursor: pointer;
+      pointer-events: auto; box-shadow: 0 2px 6px rgba(0,0,0,0.32);
     }
     /* Shown only when something is actually queued: .active is toggled on
        `count > 0 && !locked` in _updateBuildPanel. */
@@ -655,6 +708,22 @@
 
     /* The HUD is always in the DOM; keep it out of sight until play starts. */
     body:not(.playing) #hud { display: none; }
+
+    /*
+     * Spectating: hide everything that acts on a base you no longer have.
+     *
+     * Input is already disabled the moment the base falls, so these were
+     * controls that looked live and did nothing — the worst kind. The
+     * leaderboard, minimap, clock, LEAVE and ⛶ all stay, because those are
+     * exactly what someone watching the rest of the match still uses.
+     *
+     * !important because #skill-panel carries its own visibility rules (it
+     * appears only when there are points to spend) and this has to win over
+     * them regardless of which fires last.
+     */
+    body.spectating #build-panel,
+    body.spectating #cmd-bar,
+    body.spectating #skill-panel { display: none !important; }
 
     /* Everything below sizes off BOTH width and height. A menu that fits a wide
        short laptop screen is the harder case, so vh appears in most clamps. */

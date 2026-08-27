@@ -323,18 +323,25 @@ export class Game {
         this._send({ t: 'queue', unit, n: -1 });
       });
 
-      // The ✕ cancels the WHOLE queued run in one command.
+      // The ✕ removes ONE per tap — the touch equivalent of right-click.
       //
-      // Right-click removes one at a time, which is fine with a mouse and
-      // useless on a phone — there is no right-click, and undoing a mis-tap
-      // that queued twenty soldiers one tap at a time is not a real option.
-      // stopPropagation matters: without it the tap would bubble to the parent
-      // button and queue one straight back.
+      // It used to send `n: -queued` to clear the whole run, which never worked
+      // against a server: validateCommand accepts only 1 or -1, so an 8-deep
+      // cancel was rejected outright and did nothing. Practice mode has no
+      // validator, so it worked there and nowhere else. What players saw
+      // instead was a long-press firing `contextmenu` on the parent button,
+      // which does send -1 — so the thing appearing to work was never the ✕.
+      //
+      // Sending -1 satisfies the validator as written, so the shape check stays
+      // as strict as it is, and the touch and mouse paths now do the same thing
+      // instead of competing.
+      //
+      // stopPropagation matters: without it the tap bubbles to the parent
+      // button and queues one straight back.
       btn.querySelector('.u-cancel')?.addEventListener('click', (e) => {
         e.stopPropagation();
         e.preventDefault();
-        const queued = Number(btn.querySelector('.u-badge')?.textContent) || 0;
-        if (queued > 0) this._send({ t: 'queue', unit, n: -queued });
+        this._send({ t: 'queue', unit, n: -1 });
       });
     });
 
@@ -717,7 +724,7 @@ export class Game {
    * Capped and self-expiring: an unbounded notification list on a long match
    * grows without limit and quietly eats memory and layout time.
    */
-  showNotice(msg, kind = 'info') {
+  showNotice(msg, kind = 'info', { force = false } = {}) {
     // The tutorial owns the message area while it is running.
     //
     // One gate, here, rather than a check at each caller: contextual tips and
@@ -728,7 +735,11 @@ export class Game {
     //
     // Nothing is lost by dropping them: tips re-evaluate every frame, so one
     // still true when the tutorial ends simply fires then.
-    if (this._firstRun?.active) return;
+    //
+    // `force` is for the handful of things that are not advice and cannot wait
+    // — being eliminated, above all. A tutorial step is not a reason to leave a
+    // player wondering why the game stopped responding.
+    if (this._firstRun?.active && !force) return;
     if (!msg) return;
     const host = document.getElementById('notifs');
     if (!host) return;
@@ -772,6 +783,16 @@ export class Game {
             this._killedBy = this._nameOf(ev.data.killerId);
             this._showEliminatedBy();
             this._focusKillerBase(ev.data.killerId);
+            // Also as a notice. Dying is a fast, busy moment and the banner is
+            // easy to miss; `force` because showNotice otherwise drops
+            // everything while the tutorial is running, and dying during the
+            // tutorial is exactly when a new player most needs to be told what
+            // just happened to them.
+            this.showNotice(
+              this._killedBy ? `💀 Eliminated by ${this._killedBy}` : '💀 Your mother base was destroyed',
+              'warn',
+              { force: true },
+            );
           }
           break;
 
@@ -1017,6 +1038,7 @@ export class Game {
     this._input.setEnabled(true);
     this._gameOver = false;
     this._spectating = false;
+    document.body.classList.remove("spectating");   // controls come back next match
     this._lastConnError = null;
 
     this._conn = new WebSocketConnection(SERVER_URL, this._name);
@@ -1067,6 +1089,10 @@ export class Game {
     this._selection.clear();
     document.getElementById('spectate-banner')?.classList.add('vis');
     document.getElementById('spectate-tag')?.classList.add('vis');
+    // Everything that acts on a base you no longer have is hidden from here —
+    // build strip, command bar, buffs. Input is already disabled, so leaving
+    // them on screen only implied they still did something.
+    document.body.classList.add('spectating');
     this._showEliminatedBy();   // the event may have landed before or after this
     // Dying mid-walkthrough ends it: the remaining steps assume a live base.
     this._firstRun?.finish();
@@ -1094,7 +1120,15 @@ export class Game {
       const aliveCount = [...world.players.values()].filter(p => p.alive).length;
       if (aliveCount <= 1) { over = true; won = !!me.alive; }
     }
-    if (!over) return;
+    // Your base fell but the match has not: spectate.
+    //
+    // This call was missing entirely. _checkSpectate ran only on the `online`
+    // branch above, so in practice mode the spectate banner was never shown at
+    // all — and the killer's name, which _showEliminatedBy writes into that
+    // banner, was written into an element nobody could see. The simulation was
+    // reporting the killer correctly the whole time (verified: 12 of 12
+    // eliminations carried a resolvable killer id); it simply had nowhere to go.
+    if (!over) { this._checkSpectate(); return; }
 
     this._gameOver = true;
     this._input.setEnabled(false);
