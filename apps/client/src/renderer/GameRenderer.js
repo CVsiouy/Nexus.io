@@ -505,26 +505,92 @@ export class GameRenderer {
         g.lineStyle(0);
       }
     }
+    /*
+     * BIGGER, and one shape per boss.
+     *
+     * The old gem was sz*1.5 in a 30px slot — at real phone zoom that is a small
+     * gold lozenge indistinguishable from a mining node, which is exactly the
+     * complaint. The body is now roughly double, with a dark outline so it holds
+     * its silhouette against the pale grid.
+     *
+     * boss.index (0 or 1) already travels in the snapshot, so the two bosses can
+     * simply look different: a faceted crystal and a spiked crown. Two landmarks
+     * beat one repeated twice — "meet me at the crown" is a thing players can
+     * say.
+     */
     const sz = 30;
     const hpR = b.hp / b.maxHp;
     const pulse = Math.sin(t * 3.5) * 0.15 + 1;
+    const spin = t * 0.35;                    // slow; a fast spin reads as a pickup
+    const R = sz * 2.6;
 
-    g.lineStyle(3, 0xcc8800, 0.6);
-    g.drawCircle(x, y, sz * 2.2 * pulse);
-    g.lineStyle(4, 0x886600, 1);
-    g.beginFill(0xd4a017, 1);
-    this._drawBossGem(g, x, y, sz * 1.5);
+    // Aura: two rings, so it reads as dangerous rather than collectable.
+    g.lineStyle(3, 0xcc8800, 0.55);
+    g.drawCircle(x, y, R * 1.28 * pulse);
+    g.lineStyle(1.5, 0xcc8800, 0.3);
+    g.drawCircle(x, y, R * 1.55 * pulse);
+
+    g.lineStyle(5, 0x4a3708, 1);              // dark outline, not mid-brown
+    g.beginFill(0xe8b923, 1);
+    if ((b.index ?? 0) % 2 === 0) this._drawBossCrystal(g, x, y, R);
+    else                          this._drawBossCrown(g, x, y, R, spin);
     g.endFill();
     g.lineStyle(0);
 
-    const bw = 70;
+    // Inner facets / core, drawn over the body to give it depth.
+    if ((b.index ?? 0) % 2 === 0) {
+      g.lineStyle(2, 0x8a6a10, 0.75);
+      g.moveTo(x, y - R); g.lineTo(x - R * 0.42, y);
+      g.moveTo(x, y - R); g.lineTo(x + R * 0.42, y);
+      g.moveTo(x - R * 0.42, y); g.lineTo(x, y + R);
+      g.moveTo(x + R * 0.42, y); g.lineTo(x, y + R);
+      g.moveTo(x - R * 0.42, y); g.lineTo(x + R * 0.42, y);
+      g.lineStyle(0);
+    } else {
+      g.beginFill(0x3a2c06, 1);
+      g.drawCircle(x, y, R * 0.42);
+      g.endFill();
+      g.beginFill(0xe8b923, 1);
+      g.drawCircle(x, y, R * 0.16);
+      g.endFill();
+    }
+
+    const bw = 84;
     g.beginFill(0xcccccc, 1);
-    g.drawRoundedRect(x - bw / 2, y - sz - 22, bw, 8, 4);
+    g.drawRoundedRect(x - bw / 2, y - R - 26, bw, 9, 4);
     g.endFill();
     g.beginFill(0xd4a017, 1);
-    g.drawRoundedRect(x - bw / 2, y - sz - 22, bw * hpR, 8, 4);
+    g.drawRoundedRect(x - bw / 2, y - R - 26, bw * hpR, 9, 4);
     g.endFill();
   }
+
+  /** Boss 0: a tall faceted crystal — treasure worth taking. */
+  _drawBossCrystal(g, cx, cy, r) {
+    const w = r * 0.62;          // shoulder half-width
+    const sh = r * 0.34;         // where the shoulders sit, above centre
+    g.drawPolygon([
+      cx,     cy - r,            // apex
+      cx + w, cy - sh,
+      cx + w * 0.78, cy + r * 0.46,
+      cx,     cy + r,            // base point
+      cx - w * 0.78, cy + r * 0.46,
+      cx - w, cy - sh,
+    ]);
+  }
+
+  /** Boss 1: a spiked crown — a threat, not a pickup. */
+  _drawBossCrown(g, cx, cy, r, rot = 0) {
+    const SPIKES = 8;
+    const pts = [];
+    for (let i = 0; i < SPIKES * 2; i++) {
+      const a = (i / (SPIKES * 2)) * Math.PI * 2 + rot;
+      // Long spikes over a fat body, so the outline stays readable when small.
+      const rad = i % 2 === 0 ? r : r * 0.58;
+      pts.push(cx + Math.cos(a) * rad, cy + Math.sin(a) * rad);
+    }
+    g.drawPolygon(pts);
+  }
+
 
   _drawStar(g, cx, cy, outerR, innerR) {
     const pts = [];
@@ -534,35 +600,6 @@ export class GameRenderer {
       pts.push(cx + Math.cos(a) * r, cy + Math.sin(a) * r);
     }
     g.drawPolygon(pts);
-  }
-
-  /**
-   * The boss: a diamond with its sides pulled in.
-   *
-   * Four points rather than five, and deliberately NOT a regular diamond —
-   * the horizontal spikes run longer than the vertical ones and the waist is
-   * tucked in, which gives it a cut-gem silhouette that reads as an object
-   * rather than a unit. A five-pointed star looked like a rating, and a plain
-   * diamond looked like a pickup.
-   *
-   * The proportions are lifted from the boss illustration in the tutorial, so
-   * the thing you are taught to look for is the thing you see on the map.
-   */
-  _drawBossGem(g, cx, cy, r) {
-    const ax = r * 1.33;      // horizontal reach — the long axis
-    const ay = r;             // vertical reach
-    const wx = r * 0.44;      // waist, where the sides tuck in
-    const wy = r * 0.22;
-    g.drawPolygon([
-      cx,      cy - ay,       // top point
-      cx + wx, cy - wy,
-      cx + ax, cy,            // right point
-      cx + wx, cy + wy,
-      cx,      cy + ay,       // bottom point
-      cx - wx, cy + wy,
-      cx - ax, cy,            // left point
-      cx - wx, cy - wy,
-    ]);
   }
 
   // ── Soldiers ───────────────────────────────────────────────────────────────
@@ -584,9 +621,13 @@ export class GameRenderer {
       const facing = sol.facing;
       const sizes = { grunt: 7, sentinel: 10, saboteur: 5, vanguard: 11 };
       // Guards are drawn a touch larger — they really are tougher than a grunt.
-      const sz = (sizes[sol.type] ?? 7) + (isBossGuard ? 2 : 0);
+      const sz = (sizes[sol.type] ?? 7) + (isBossGuard ? 4 : 0);
       const fill   = sol.type === 'saboteur' ? 0x1a1a1a : ownerColor;
-      const border = sol.type === 'saboteur' ? ownerColor : _darken(ownerColor, 0.5);
+      // Boss guards take the boss body outline, so a boss and its garrison read
+      // as one faction at a glance instead of as unrelated gold dots.
+      const border = isBossGuard ? 0x4a3708
+                   : sol.type === 'saboteur' ? ownerColor
+                   : _darken(ownerColor, 0.5);
 
       // Selection ring if this soldier's group is selected (player only).
       // Selection now lives on the client — it is not part of the shared game

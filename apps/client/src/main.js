@@ -115,7 +115,12 @@ function initTutorialToggle() {
   const box = document.getElementById('tutorial-toggle');
   if (!box) return;
   box.checked = tutorialEnabled();
-  box.addEventListener('change', () => setTutorialEnabled(box.checked));
+  box.addEventListener('change', () => {
+    setTutorialEnabled(box.checked);
+    // Apply immediately: a player who switches it on mid-match expects it now,
+    // not at the start of the next one.
+    game?.rearmTutorial?.();
+  });
 }
 
 function initQualityToggle(game) {
@@ -178,15 +183,20 @@ async function main() {
   };
 
   /** Practice: the whole game runs inside this browser. Costs the server nothing. */
-  const practice = (mode) => {
-    goImmersive();          // must be called from inside the tap, not after it
+  const practice = async (mode) => {
+    // AWAITED, deliberately. requestFullscreen already fired synchronously inside
+    // the tap, so the gesture is not lost — but fullscreen and the orientation
+    // lock both change the viewport, and startMatch lays out the HUD from it.
+    // Firing and forgetting meant the HUD was sized for the pre-fullscreen,
+    // pre-rotation screen and its bottom row fell off the bottom of the phone.
+    await goImmersive();
     hideIntro();
     game.startMatch(mode, { online: false });
   };
 
   /** Online: the game runs on the server; this browser just draws it. */
   const online = async (mode) => {
-    goImmersive();          // fire before the first await, while the tap still counts as user activation
+    await goImmersive();   // see practice() — the viewport must settle before layout
     const input = document.getElementById('player-name');
     const name  = (input?.value || '').trim() || 'Player';
 

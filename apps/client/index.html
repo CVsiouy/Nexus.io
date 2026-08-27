@@ -934,90 +934,97 @@
     #cmd-release.garrison-full { animation: garrisonReady 0.9s ease-in-out infinite; background: #f2fbf5; }
     #cmd-release.garrison-full .c-name { color: #16a34a; }
 
-    /* ─── Specialization Modal ─── */
-    /*
-     * ─── Specialization modal ───
+    /* ─── Specialization ──────────────────────────────────────────────────
      *
-     * This appears MID-MATCH and pauses the game, and it is dismissable only by
-     * picking a card. So if its content does not fit, the player is stuck.
+     * This was a full-screen modal (`position: fixed; inset: 0`) that also
+     * called _setPaused(true). Online that was worse than it looked:
+     * WebSocketConnection.setPaused() is an empty method, so the server kept
+     * simulating while the modal covered the map AND _setPaused disabled the
+     * player's input. You were benched, blind, mid-match, while seven other
+     * people carried on.
      *
-     * It used to be a centred flex column with no overflow — the exact trap
-     * documented for #gameover further down. A centred column that overflows
-     * clips at BOTH ends, and the clipped-off top cannot be scrolled to because
-     * scrolling never goes above a container's start. On a landscape phone
-     * (~393px tall) the title and the first card were off-screen and
-     * unreachable: a hard soft-lock.
+     * Now: a compact card in the empty band under the status strip. It never
+     * covers the map, never pauses, and never takes input away. Choosing is
+     * still permanent; being ASKED no longer costs you anything.
      *
-     * Same fix as #gameover: auto margins on the first and last child do the
-     * centring when there is room and collapse to zero when there is not, so it
-     * scrolls normally instead of clipping.
+     * The band it sits in is the same one the tutorial vacated when that moved
+     * to the message area — corner clusters end around y=60 and the action
+     * circles start around y=317 on an 852x393 landscape phone.
      */
     #spec-modal {
-      position: fixed; inset: 0;
-      background: rgba(244,244,244,0.9);
-      backdrop-filter: blur(6px);
+      position: absolute; top: calc(var(--gut-t) + 46px);
+      left: 50%; transform: translateX(-50%);
+      z-index: 28;
       display: none; flex-direction: column;
-      align-items: center; justify-content: flex-start;
-      z-index: 90; gap: clamp(10px, 2.4vh, 24px);
-      overflow-y: auto; overscroll-behavior: contain;
-      padding: max(clamp(12px, 3vh, 32px), env(safe-area-inset-top))
-               max(16px, env(safe-area-inset-right))
-               max(clamp(12px, 3vh, 32px), env(safe-area-inset-bottom))
-               max(16px, env(safe-area-inset-left));
+      width: min(560px, 92vw);
+      padding: 8px 10px 9px;
+      border-radius: 12px;
+      background: rgba(255,255,255,0.94);
+      backdrop-filter: blur(8px);
+      box-shadow: 0 4px 20px rgba(0,0,0,0.18);
+      pointer-events: auto;
+      font-family: 'Rajdhani', sans-serif;
     }
     #spec-modal.vis { display: flex; }
-    #spec-modal .spec-title  { margin-top: auto; }      /* top half of the centring */
-    #spec-modal .spec-cards  { margin-bottom: auto; }   /* bottom half */
+
     #spec-modal .spec-title {
-      font-family: 'Rajdhani', sans-serif;
-      font-size: clamp(18px, 4.2vh, 28px); font-weight: 700;
-      color: #1a2a40; letter-spacing: 2px; text-align: center;
+      font-size: 11px; font-weight: 700; letter-spacing: 2px;
+      color: #0077cc; text-transform: uppercase; text-align: center;
     }
     #spec-modal .spec-subtitle {
-      font-size: clamp(11px, 1.8vh, 13px); color: #7b8fa1; text-align: center;
+      font-size: 10.5px; font-weight: 600; color: #94a3b8;
+      text-align: center; margin-bottom: 6px;
     }
     #spec-modal .spec-cards {
-      display: flex; gap: clamp(8px, 1.6vh, 18px); flex-wrap: wrap;
-      justify-content: center;
+      display: flex; gap: 6px; align-items: stretch;
     }
     .spec-card {
-      background: white; border: 1.5px solid #e2e8f0;
-      border-radius: 14px;
-      padding: clamp(10px, 2vh, 22px) clamp(12px, 3vw, 26px);
-      min-width: min(180px, 100%); cursor: pointer; pointer-events: all;
-      transition: all .2s ease;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+      flex: 1 1 0; min-width: 0;
+      background: #fff; border: 1.5px solid #e2e8f0; border-radius: 9px;
+      padding: 7px 6px 8px;
+      cursor: pointer; pointer-events: all;
+      transition: all .15s ease;
       text-align: center;
     }
-    .spec-card .spec-icon {
-      font-size: clamp(20px, 4vh, 32px); margin-bottom: clamp(4px, 1.2vh, 10px);
-    }
+    .spec-card .spec-icon { font-size: 17px; line-height: 1.1; }
     .spec-card .spec-name {
-      font-family: 'Rajdhani', sans-serif;
-      font-size: clamp(13px, 2.2vh, 16px); font-weight: 700;
-      color: #1a2a40; letter-spacing: 1.5px;
-      text-transform: uppercase; margin-bottom: clamp(4px, 1vh, 8px);
+      font-size: 12px; font-weight: 700; color: #1a2a40; letter-spacing: .5px;
     }
     .spec-card .spec-desc {
-      font-size: clamp(11px, 1.7vh, 12px); color: #7b8fa1; line-height: 1.45;
+      font-size: 9.5px; line-height: 1.3; color: #7b8fa1; font-weight: 600;
+      margin-top: 2px;
     }
-    /* Hover-gated: on a touch screen :hover latches after a tap and leaves the
-       card visibly lifted until you tap elsewhere. See the hover block below. */
+    .spec-btn {
+      margin-top: 6px; width: 100%; min-height: 32px;
+      border: 1.5px solid #0077cc; border-radius: 7px;
+      background: transparent; color: #0077cc;
+      font-family: 'Rajdhani', sans-serif;
+      font-weight: 700; font-size: 11px; letter-spacing: 1px;
+      cursor: pointer; pointer-events: all;
+    }
     @media (hover: hover) and (pointer: fine) {
-      .spec-card:hover {
-        border-color: #0077cc;
-        box-shadow: 0 6px 20px rgba(0,119,204,0.2);
-        transform: translateY(-3px);
-      }
+      .spec-card:hover { border-color: #0077cc; box-shadow: 0 4px 14px rgba(0,119,204,0.18); }
     }
-    /*
-     * Landscape phone: 3 cards across ~850px fit comfortably in ONE row, so the
-     * modal needs no scrolling at all. The scroll recovery above is the safety
-     * net; this is the actual plan.
-     */
-    @media (pointer: coarse) and (orientation: landscape) and (max-height: 520px) {
-      #spec-modal .spec-cards { flex-wrap: nowrap; width: 100%; }
-      .spec-card { flex: 1 1 0; min-width: 0; }
+
+    /* "Later" is the whole point of the redesign: the choice is permanent, so
+       being rushed into it is the one thing the UI must not do. */
+    #spec-later {
+      align-self: center; margin-top: 6px;
+      border: 0; background: none; cursor: pointer;
+      color: #94a3b8; font-family: 'Rajdhani', sans-serif;
+      font-size: 10.5px; font-weight: 700; letter-spacing: 1px;
+      min-width: 44px; min-height: 30px;
+    }
+    #spec-later:hover { color: #0077cc; }
+
+    /* The way back in. Lives in the top strip rather than floating top-left,
+       where #skill-panel already sits — two pulsing chips fighting for the same
+       corner is exactly the collision the mobile pass spent so long removing. */
+    #spec-chip { display: none; font-size: 15px; letter-spacing: 0; padding: 5px 12px; }
+    #spec-chip.vis { display: inline-block; animation: specPulse 1.2s ease-in-out infinite; }
+    @keyframes specPulse {
+      0%,100% { box-shadow: 0 2px 10px rgba(0,0,0,0.10); }
+      50%     { box-shadow: 0 0 0 3px rgba(0,119,204,0.45); }
     }
 
     /* ─── Menu button (top-center) ─── */
@@ -1309,6 +1316,67 @@
     #top-strip #match-bar    { position: static; margin-top: 0; transform: none; left: auto; top: auto; }
     #top-strip #spectate-tag { position: static; transform: none; left: auto; top: auto; }
 
+    /* Every strip child flows.
+       #menu-btn was left absolutely positioned at left:50% while its siblings
+       were made static, so it sat on top of #match-bar — invisible only because
+       the two are never shown at the same time (MENU is hidden online, and the
+       clock is what you see there). Adding buttons to the row makes that
+       collision real, so it joins the others. */
+    #top-strip #menu-btn { position: static; transform: none; left: auto; top: auto; }
+
+    /* Shared look for the strip buttons. Deliberately the same shape as
+       #menu-btn so the row reads as one control cluster. */
+    .strip-btn {
+      pointer-events: all; cursor: pointer;
+      background: rgba(255,255,255,0.9);
+      border: 1.5px solid rgba(0,0,0,0.12); border-radius: 20px;
+      color: #3d5166; font-family: 'Rajdhani', sans-serif;
+      font-size: 12px; font-weight: 700; letter-spacing: 2px;
+      padding: 7px 14px; min-height: 34px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.10);
+      transition: all .15s ease;
+    }
+    .strip-btn:hover { border-color: #0077cc; color: #0077cc; }
+    #leave-btn { display: none; }              /* online only — Game shows it */
+    #leave-btn:hover { border-color: #dc2626; color: #dc2626; }
+    #fs-btn { font-size: 15px; letter-spacing: 0; padding: 5px 12px; }
+
+    /*
+     * Leave confirmation.
+     *
+     * Small and centred rather than the full-screen pause modal: leaving is a
+     * two-word decision and the match behind it is still running, so covering
+     * the map would be both unnecessary and misleading. It does NOT pause —
+     * pausing an eight-player match is not a thing that can be offered.
+     */
+    #leave-confirm {
+      position: fixed; inset: 0; z-index: 95;
+      display: none; align-items: center; justify-content: center;
+      background: rgba(20,28,40,0.35);
+      backdrop-filter: blur(3px);
+    }
+    #leave-confirm.vis { display: flex; }
+    .lc-card {
+      background: #fff; border-radius: 14px;
+      padding: 16px 18px 14px;
+      width: min(300px, 80vw);
+      box-shadow: 0 10px 34px rgba(0,0,0,0.28);
+      font-family: 'Rajdhani', sans-serif; text-align: center;
+    }
+    .lc-title { font-size: 17px; font-weight: 700; color: #1a2a40; letter-spacing: .5px; }
+    .lc-sub   { font-size: 12.5px; color: #7b8fa1; font-weight: 600; margin: 5px 0 13px; }
+    .lc-actions { display: flex; gap: 8px; }
+    .lc-actions button {
+      flex: 1; min-height: 42px; border-radius: 10px; cursor: pointer;
+      font-family: 'Rajdhani', sans-serif;
+      font-size: 13px; font-weight: 700; letter-spacing: 1px;
+      border: 1.5px solid #d5dde6; background: #fff; color: #46596b;
+    }
+    /* Stay is the default and the safe one, so it carries the weight. A mis-tap
+       on a phone should never cost a match. */
+    #lc-stay  { background: #0077cc; border-color: #0077cc; color: #fff; }
+    #lc-leave { color: #dc2626; border-color: #f0c4c4; }
+
     /* ── Camera stick ───────────────────────────────────────────────────── */
     #joystick {
       position: absolute;
@@ -1359,7 +1427,16 @@
       flex-direction: column;
       align-items: center; justify-content: center;
       gap: 16px; padding: 24px;
-      background: #1a2a40; color: #fff;
+      /* Translucent over a blur of the live game rather than an opaque slab.
+         Costs no extra simulation: a demo match already runs behind the menu,
+         so the canvas is rendering regardless and this just samples it.
+         Rendering IS paused while the gate is up (see Game._syncPortraitGate) —
+         nobody can see those frames, and a portrait phone is exactly the device
+         least able to spare them. */
+      background: rgba(20,28,40,0.62);
+      backdrop-filter: blur(14px) saturate(0.8);
+      -webkit-backdrop-filter: blur(14px) saturate(0.8);
+      color: #fff;
       text-align: center;
       font-family: 'Rajdhani', sans-serif;
       /* It sits over the play surface, so it must also swallow gestures.
@@ -2013,6 +2090,11 @@
     -->
     <div id="top-strip">
       <button id="menu-btn" title="Pause / Menu [Esc]">⏸ MENU</button>
+      <!-- Online only. There was no way out of a live match at all: startMatch
+           hides MENU when online, and the pause modal behind it is the offline
+           Resume/Exit dialog. Pausing is meaningless with seven other players,
+           so this leaves rather than pauses. -->
+      <button id="leave-btn" class="strip-btn" title="Leave this match">⏏ LEAVE</button>
 
       <!-- Match status: time left, and how good your connection is. -->
       <div id="match-bar">
@@ -2020,6 +2102,11 @@
         <span id="match-ping" class="ping-good" title="Round-trip time to the server"></span>
       </div>
 
+      <!-- Reflects real fullscreen state, never a remembered flag: the system
+           back-gesture can drop out of fullscreen without telling us. -->
+      <button id="fs-btn" class="strip-btn" title="Fullscreen">⛶</button>
+
+      <button id="spec-chip" class="strip-btn" title="Choose your specialization">⭐</button>
       <div id="spectate-tag">SPECTATING</div>
     </div>
     <!--
@@ -2177,6 +2264,40 @@
       <div class="js-ring"></div>
       <div class="js-knob"></div>
     </div>
+
+    <!--
+      Specialization. INSIDE #hud on purpose: it needs the --gut-* variables,
+      which are declared on #hud, and a positioned ancestor for its absolute
+      placement. #hud is pointer-events:none, so the card sets its own to auto.
+
+      The inline styles that used to be on each SELECT button are gone — they
+      duplicated .spec-btn and silently overrode the compact sizing.
+    -->
+    <div id="spec-modal">
+      <div class="spec-title">Choose your specialization</div>
+      <div class="spec-subtitle">Permanent — but there is no hurry.</div>
+      <div class="spec-cards">
+        <div class="spec-card">
+          <div class="spec-icon">⛏️</div>
+          <div class="spec-name">Prospector</div>
+          <div class="spec-desc">+50% gold mining</div>
+          <button class="spec-btn" data-spec="prospector">SELECT</button>
+        </div>
+        <div class="spec-card">
+          <div class="spec-icon">🛡️</div>
+          <div class="spec-name">Bastion</div>
+          <div class="spec-desc">+30% mother base HP</div>
+          <button class="spec-btn" data-spec="bastion">SELECT</button>
+        </div>
+        <div class="spec-card">
+          <div class="spec-icon">⚔️</div>
+          <div class="spec-name">Warmonger</div>
+          <div class="spec-desc">+25% damage · +30% attack speed · soldiers 30% faster</div>
+          <button class="spec-btn" data-spec="warmonger">SELECT</button>
+        </div>
+      </div>
+      <button id="spec-later" type="button">DECIDE LATER</button>
+    </div>
   </div><!-- /#hud -->
 
   <!--
@@ -2191,6 +2312,19 @@
     this replaces read "Rotate for the full controls", which invited the reply
     "…or don't", and plenty of players took it.
   -->
+
+  <!-- Leave confirmation. Outside #hud: it must sit above everything, and #hud
+       is pointer-events:none with its own stacking context. -->
+  <div id="leave-confirm" role="alertdialog" aria-label="Leave this match?">
+    <div class="lc-card">
+      <div class="lc-title">Leave this match?</div>
+      <div class="lc-sub">Your base is lost if you go.</div>
+      <div class="lc-actions">
+        <button id="lc-stay" type="button">STAY</button>
+        <button id="lc-leave" type="button">LEAVE</button>
+      </div>
+    </div>
+  </div>
   <div id="rotate-gate" role="alertdialog" aria-label="Rotate your device">
     <span class="rg-icon" aria-hidden="true">⟳</span>
     <span class="rg-text">Please turn device to landscape mode</span>
@@ -2281,30 +2415,6 @@
   </div>
 
   <!-- ─── Specialization Modal ─── -->
-  <div id="spec-modal">
-    <div class="spec-title">CHOOSE YOUR SPECIALIZATION</div>
-    <div class="spec-subtitle">This is permanent. Choose wisely.</div>
-    <div class="spec-cards">
-      <div class="spec-card">
-        <div class="spec-icon">⛏️</div>
-        <div class="spec-name">Prospector</div>
-        <div class="spec-desc">+50% gold mining · Out-produce every rival</div>
-        <button class="spec-btn" data-spec="prospector" style="margin-top:12px;padding:7px 18px;border:1.5px solid #0077cc;border-radius:6px;background:transparent;color:#0077cc;font-weight:700;cursor:pointer;pointer-events:all;font-size:12px;">SELECT</button>
-      </div>
-      <div class="spec-card">
-        <div class="spec-icon">🛡️</div>
-        <div class="spec-name">Bastion</div>
-        <div class="spec-desc">+30% mother base HP · Turtle up and endure</div>
-        <button class="spec-btn" data-spec="bastion" style="margin-top:12px;padding:7px 18px;border:1.5px solid #0077cc;border-radius:6px;background:transparent;color:#0077cc;font-weight:700;cursor:pointer;pointer-events:all;font-size:12px;">SELECT</button>
-      </div>
-      <div class="spec-card">
-        <div class="spec-icon">⚔️</div>
-        <div class="spec-name">Warmonger</div>
-        <div class="spec-desc">+25% damage · +30% attack speed · Build soldiers 30% faster</div>
-        <button class="spec-btn" data-spec="warmonger" style="margin-top:12px;padding:7px 18px;border:1.5px solid #0077cc;border-radius:6px;background:transparent;color:#0077cc;font-weight:700;cursor:pointer;pointer-events:all;font-size:12px;">SELECT</button>
-      </div>
-    </div>
-  </div>
 
   <!-- ─── Pause / Menu overlay ─── -->
   <div id="pause-modal">

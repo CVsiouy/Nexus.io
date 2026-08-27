@@ -231,6 +231,16 @@ export class Game {
       requestAnimationFrame(applyResize);
     };
 
+    // Exposed so startMatch can force one re-measure after it reveals the HUD.
+    // Revealing #hud changes what is laid out, and on the fullscreen path the
+    // viewport may have only just settled.
+    this._queueResize = queueResize;
+
+    // The one query that decides whether the landscape gate is up. Same
+    // condition as the CSS rule that shows it, deliberately — two sources of
+    // truth for "is the gate visible" would drift.
+    this._portraitGate = window.matchMedia?.('(pointer: coarse) and (orientation: portrait)') ?? null;
+
     window.addEventListener('resize', queueResize);
     window.visualViewport?.addEventListener('resize', queueResize);
     // Entering or leaving fullscreen changes the drawable area. A plain resize
@@ -238,6 +248,13 @@ export class Game {
     // readable — this is a second, later chance. queueResize already coalesces
     // into one rAF so the duplicate costs nothing.
     document.addEventListener('fullscreenchange', queueResize);
+    // The landscape lock we request ourselves rotates the viewport, and a
+    // rotation does not always deliver a usable `resize` in time. There is no
+    // plain orientationchange listener on purpose (on iOS it fires before the
+    // new dimensions are readable) — this is the modern event, which fires
+    // after the change has applied. queueResize coalesces, so overlapping
+    // with resize costs nothing.
+    screen.orientation?.addEventListener?.('change', queueResize);
   }
 
   // ── Sending orders ─────────────────────────────────────────────────────────
@@ -291,8 +308,9 @@ export class Game {
     document.querySelectorAll('.spec-btn').forEach(btn => {
       btn.addEventListener('click', () => {
         this._send({ t: 'spec', choice: btn.dataset.spec });
+        // Chosen — the card and its reminder are both done for good.
         document.getElementById('spec-modal').classList.remove('vis');
-        this._setPaused(false);
+        document.getElementById('spec-chip')?.classList.remove('vis');
       });
     });
 
@@ -364,6 +382,40 @@ export class Game {
     document.getElementById('go-exit-btn').addEventListener('click', () => this._exit());
     document.getElementById('restart-btn').addEventListener('click', () => this._requeue());
 
+    // ── Specialization: dismiss to a chip, never a forced choice ─────────
+    // Deliberately no pause on any of these paths. The card sits in an empty
+    // band above the map; the match carries on underneath either way.
+    const specCard = document.getElementById('spec-modal');
+    const specChip = document.getElementById('spec-chip');
+    document.getElementById('spec-later')?.addEventListener('click', () => {
+      specCard?.classList.remove('vis');
+      specChip?.classList.add('vis');       // the way back in
+    });
+    specChip?.addEventListener('click', () => {
+      specCard?.classList.add('vis');
+      specChip.classList.remove('vis');
+    });
+
+    // ── Fullscreen toggle ────────────────────────────────────────────────
+    // State comes from document.fullscreenElement every time, never from a
+    // boolean we keep: the system back-gesture and Escape both leave fullscreen
+    // without asking us, and a remembered flag would then be a lie.
+    document.getElementById('fs-btn')?.addEventListener('click', () => this._toggleFullscreen());
+    document.addEventListener('fullscreenchange', () => this._syncFsBtn());
+    this._syncFsBtn();
+
+    // ── Leaving a match ──────────────────────────────────────────────────
+    // Deliberately does NOT pause. Online there is nothing to pause — the
+    // server keeps simulating regardless — and offline the pause menu already
+    // exists behind MENU.
+    const leaveConfirm = document.getElementById('leave-confirm');
+    const closeLeave = () => leaveConfirm?.classList.remove('vis');
+    document.getElementById('leave-btn')?.addEventListener('click', () => leaveConfirm?.classList.add('vis'));
+    document.getElementById('lc-stay')?.addEventListener('click', closeLeave);
+    document.getElementById('lc-leave')?.addEventListener('click', () => this._exit());
+    // Tapping the backdrop is the same as Stay — the safe answer, always.
+    leaveConfirm?.addEventListener('click', (e) => { if (e.target === leaveConfirm) closeLeave(); });
+
     window.addEventListener('keydown', e => {
       if (isTypingInto(e)) return;   // R must not release the garrison mid-name
       if (!this._running || this._gameOver) return;
@@ -375,8 +427,14 @@ export class Game {
       // one, and only pause when there is nothing to back out of. That matches
       // what Escape means everywhere else — "undo the current mode".
       if (e.code === 'Escape') {
-        const specOpen = document.getElementById('spec-modal').classList.contains('vis');
-        if (specOpen) return;                      // the spec modal owns Escape
+        // The spec card is dismissable now rather than blocking, so Escape
+        // sends it to the chip instead of being swallowed by it.
+        const specCardEl = document.getElementById('spec-modal');
+        if (specCardEl?.classList.contains('vis')) {
+          specCardEl.classList.remove('vis');
+          document.getElementById('spec-chip')?.classList.add('vis');
+          return;
+        }
         if (this._input?.hasSelection()) this._input.unselect();
         else this.togglePause();
       }
@@ -539,6 +597,10 @@ export class Game {
     // match seven other people are also playing.
     const menuBtn = document.getElementById('menu-btn');
     if (menuBtn && online) menuBtn.style.display = 'none';
+    // LEAVE replaces MENU online. Without it there is no way out of a live
+    // match at all — the only exit was closing the tab.
+    const leaveBtn = document.getElementById('leave-btn');
+    if (leaveBtn) leaveBtn.style.display = online ? '' : 'none';
 
     const cam = this._camera;
     cam.focusType = 'free';
@@ -549,6 +611,9 @@ export class Game {
 
     // Reveals the HUD, which is hidden by CSS until this class is present.
     document.body.classList.add('playing');
+    // Re-measure now that #hud exists and the viewport has settled. Without
+    // this the camera keeps the fit computed before fullscreen applied.
+    this._queueResize?.();
     this._input.setEnabled(true);
 
     // Arm the teaching surfaces for this match.
@@ -570,6 +635,13 @@ export class Game {
    */
   _frame() {
     if (!this._running) return;
+
+    // Nothing behind the landscape gate is visible, so do not draw it. The
+    // gate blurs the canvas, and a large backdrop blur is real GPU work on
+    // exactly the phones least able to afford it. Simulation is untouched —
+    // this skips rendering only, so rotating back shows the current state,
+    // not a resumed freeze-frame.
+    if (this._portraitGate?.matches) return;
 
     const dt = Math.min(this._app.ticker.elapsedMS, 50) / 1000;
     const world = this._world;
@@ -699,6 +771,7 @@ export class Game {
           if (ev.data.ownerId === this._world.playerId) {
             this._killedBy = this._nameOf(ev.data.killerId);
             this._showEliminatedBy();
+            this._focusKillerBase(ev.data.killerId);
           }
           break;
 
@@ -752,6 +825,25 @@ export class Game {
    * guaranteed order, so both paths call this and whichever runs second simply
    * rewrites the same text.
    */
+  /**
+   * Pan to whoever killed you and mark their base.
+   *
+   * A name on its own does not answer the question players actually ask,
+   * which is "where did that come from". Reuses the ping pulse rather than
+   * inventing a marker: it already renders, already fades, and already
+   * expires on its own.
+   */
+  _focusKillerBase(killerId) {
+    const base = killerId ? this._world.players.get(killerId)?.base : null;
+    if (!base?.position) return;          // no killer, or they are gone too
+    const cam = this._camera;
+    cam.focusType = 'free';
+    cam.focusId = null;
+    cam.x = base.position.x;
+    cam.y = base.position.y;
+    this._pings.push({ x: base.position.x, y: base.position.y, kind: 'attack', at: performance.now() });
+  }
+
   _showEliminatedBy() {
     const el = document.querySelector('#spectate-banner .sp-sub');
     if (!el) return;
@@ -760,9 +852,17 @@ export class Game {
       : 'Your base fell — the match continues';
   }
 
+  /**
+   * Offer the specialization choice.
+   *
+   * No longer pauses. It used to call _setPaused(true), which online meant
+   * disabling the local input while the server simulated on regardless —
+   * WebSocketConnection.setPaused() is an empty method. The player was
+   * benched behind a full-screen modal in a live eight-player match.
+   */
   _showSpecModal() {
-    this._setPaused(true);
-    document.getElementById('spec-modal').classList.add('vis');
+    document.getElementById('spec-modal')?.classList.add('vis');
+    document.getElementById('spec-chip')?.classList.remove('vis');
   }
 
   /** The server's verdict on a finished online match. Authoritative. */
@@ -889,7 +989,7 @@ export class Game {
 
     this._conn?.close();
 
-    for (const id of ['gameover', 'spectate-banner', 'spectate-tag', 'go-standings', 'pause-modal', 'spec-modal', 'feedback']) {
+    for (const id of ['gameover', 'spectate-banner', 'spectate-tag', 'go-standings', 'pause-modal', 'spec-modal', 'spec-chip', 'feedback']) {
       document.getElementById(id)?.classList.remove('vis');
     }
     // Let them rate the next match too.
@@ -1033,6 +1133,30 @@ export class Game {
     this._paused = v;
     this._conn.setPaused(v);
     this._input.setEnabled(!v);
+  }
+
+  /**
+   * Re-arm (or dismiss) the tutorial from the menu toggle.
+   *
+   * Needed because reset() otherwise runs only at startMatch, so switching the
+   * toggle on during a match that is already under way did nothing at all.
+   */
+  rearmTutorial() { this._firstRun?.reset(); }
+
+  /** Enter or leave fullscreen. Silent on refusal — iOS Safari only does video. */
+  async _toggleFullscreen() {
+    try {
+      if (document.fullscreenElement) await document.exitFullscreen();
+      else await document.documentElement.requestFullscreen({ navigationUI: 'hide' });
+    } catch { /* refused — the button simply does nothing, which is honest */ }
+  }
+
+  _syncFsBtn() {
+    const btn = document.getElementById('fs-btn');
+    if (!btn) return;
+    const on = !!document.fullscreenElement;
+    btn.title = on ? 'Exit fullscreen' : 'Fullscreen';
+    btn.classList.toggle('on', on);
   }
 
   _exit() {

@@ -488,6 +488,29 @@ export const BOT_MINE_MAX_SHARE = 0.5;
  *  the decision has to be made BEFORE they arrive, not once they are on top of
  *  the base, or there is no time left to withdraw. */
 export const BOT_BAIT_RADIUS = 620;
+/*
+ * How far out an inbound squad still registers at all.
+ *
+ * Threat tapers from full weight at BOT_BAIT_RADIUS to nothing here, so a bot
+ * does not abandon its base to bait an army that is still a minute away. Before
+ * this, a squad targeting the base counted at full strength from anywhere on
+ * the map.
+ */
+export const BOT_BAIT_REACH  = 1860;   // 3x the radius
+/*
+ * How evenly matched the two attacking armies must be before stepping aside is
+ * worth it, as a fraction of the larger.
+ *
+ * Measured: without this the bot baited about 21 times per match and ended with
+ * FEWER surviving soldiers than one that never baited (27.5 vs 30.8 over 24
+ * matches). It was stepping aside whenever it could not hold, including against
+ * one big army and one token squad — which do not maul each other, so it gave
+ * up the base-ring immunity and got caught in the open for nothing.
+ *
+ * A base ringed by its own soldiers cannot be damaged at all, so abandoning that
+ * has to buy something real.
+ */
+export const BOT_BAIT_PARITY = 0.5;
 
 /** Margin demanded on both the "would standing lose?" and "would waiting win?"
  *  arithmetic. Above 1 so the bot needs a clear answer, not a coin flip. */

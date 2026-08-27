@@ -35,7 +35,6 @@
 
 import { GARRISON_MAX } from '@basewar/sim';
 
-const DONE_KEY   = 'basewar.firstRunDone';
 const TOGGLE_KEY = 'basewar.tutorial';
 
 /** The menu toggle. Default ON — only an explicit "off" is remembered. */
@@ -90,13 +89,6 @@ const STEPS = [
   },
 ];
 
-function markDone() {
-  try { localStorage.setItem(DONE_KEY, '1'); } catch { /* private browsing */ }
-}
-function alreadyDone() {
-  try { return localStorage.getItem(DONE_KEY) === '1'; }
-  catch { return false; }   // private browsing: show it. The kinder failure.
-}
 
 export class FirstRun {
   constructor() {
@@ -109,9 +101,18 @@ export class FirstRun {
     this.i = 0;
     this.active = false;
     this._base = null;      // opening values, so "did it go UP" is answerable
+    this._holdAuto = false; // set by Back — see update()
 
-    this.prevEl?.addEventListener('click', () => { if (this.i > 0) { this.i--; this._render(); } });
-    this.nextEl?.addEventListener('click', () => this._advance());
+    // Back parks the tutorial where the player put it. Without _holdAuto the
+    // very next frame re-advanced past the step they had just gone back to,
+    // because that step is complete and its `done` is still true — which is
+    // exactly why Back looked broken.
+    this.prevEl?.addEventListener('click', () => {
+      if (this.i > 0) { this.i--; this._holdAuto = true; this._render(); }
+    });
+    // Next hands control back to the auto-advance, so a player who steps back
+    // to re-read something is not stuck driving it by hand for the rest of it.
+    this.nextEl?.addEventListener('click', () => { this._holdAuto = false; this._advance(); });
     document.getElementById('fr-skip')?.addEventListener('click', () => this.finish());
   }
 
@@ -125,7 +126,8 @@ export class FirstRun {
   reset() {
     this.i = 0;
     this._base = null;
-    this.active = !!this.el && tutorialEnabled() && !alreadyDone();
+    this._holdAuto = false;
+    this.active = !!this.el && tutorialEnabled();
     if (this.active) this._render();
     else this.el?.classList.remove('vis');
   }
@@ -134,7 +136,8 @@ export class FirstRun {
   finish() {
     this.active = false;
     this.el?.classList.remove('vis');
-    markDone();
+    // No persistent "done" flag: the menu toggle is the only switch, so leaving
+    // a match and starting another shows it again while the toggle is on.
   }
 
   _advance() {
@@ -146,6 +149,7 @@ export class FirstRun {
   /** Every frame, like Tips.update. Cheap, and mostly a no-op. */
   update(world, cam) {
     if (!this.active) return;
+    if (this._holdAuto) return;   // the player pressed Back; leave them there
 
     const w = this._sample(world, cam);
     if (!w) return;                  // dead, or not ready — hold this step

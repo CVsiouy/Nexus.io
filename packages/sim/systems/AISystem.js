@@ -7,7 +7,7 @@ import {
   BOT_RESTLESS_AFTER, BOT_RESTLESS_DECAY, BOT_RESTLESS_FLOOR, BOT_BOSS_APPEAL,
   BOT_MINE_TARGET, BOT_MINE_SOLO_RADIUS, BOT_MINE_MAX_SHARE, WALL_BODY_HP, BOSS_DEFENDER_EDGE,
   BASE_DEFENSE_RADIUS, MAX_WALL_LAYERS, WORLD_SIZE,
-  BOT_BAIT_RADIUS, BOT_BAIT_SAFETY, BOT_BAIT_ATTRITION, BOT_BAIT_MIN_HP, BOT_BAIT_DISTANCE,
+  BOT_BAIT_RADIUS, BOT_BAIT_REACH, BOT_BAIT_PARITY, BOT_BAIT_SAFETY, BOT_BAIT_ATTRITION, BOT_BAIT_MIN_HP, BOT_BAIT_DISTANCE,
 } from '../constants.js';
 import { attackWithGroup, setDefending, setDefendNode, moveGroup, releaseGarrison } from './GroupSystem.js';
 import { buyMineUpgrade, mineUpgradeCost } from './ProgressionSystem.js';
@@ -193,15 +193,49 @@ export class AISystem {
       if (!state.areEnemies(player.id, ownerId)) return;
       byFaction.set(ownerId, (byFaction.get(ownerId) ?? 0) + n);
     };
+
+    /*
+     * COUNT EACH SOLDIER ONCE, AND WEIGHT IT BY HOW SOON IT ARRIVES.
+     *
+     * The previous version did neither. It added 1 for every enemy soldier
+     * inside BOT_BAIT_RADIUS and THEN added memberIds.length for every group
+     * attacking this base — so a fifteen-strong squad standing at the wall
+     * counted as thirty. That inflated totalIncoming and biggestFaction, which
+     * made `canHold` fail when the bot could comfortably hold, and skewed the
+     * survivor estimate in both directions at once.
+     *
+     * It also treated a squad crossing the map as identical to one already at
+     * the gate, so a bot could abandon its base to bait an army a minute away.
+     *
+     * Squads committed to attacking THIS base are counted first, with their
+     * ids remembered; the proximity sweep then skips anyone already counted.
+     */
+    const counted = new Set();
+
+    // Full weight at the door, tapering to nothing at BOT_BAIT_REACH. A threat
+    // you have a minute to prepare for is not a threat you flee the base for.
+    const arrivalWeight = (d) => {
+      if (d <= BOT_BAIT_RADIUS) return 1;
+      if (d >= BOT_BAIT_REACH) return 0;
+      return 1 - (d - BOT_BAIT_RADIUS) / (BOT_BAIT_REACH - BOT_BAIT_RADIUS);
+    };
+
+    for (const [, g] of state.groups) {
+      if (g.status !== 'attacking' || g.targetId !== base.id) continue;
+      if (!g.memberIds.length) continue;
+      for (const id of g.memberIds) counted.add(id);
+      const w = arrivalWeight(Math.hypot(g.anchor.x - bx, g.anchor.y - by));
+      if (w > 0) addThreat(g.ownerId, g.memberIds.length * w);
+    }
+
+    // Anything else hostile already at the door — loose soldiers, squads
+    // attacking a neighbour that happen to be on top of us — at full weight,
+    // because they are here now whatever they were aiming at.
     state.grid.forEachNear(bx, by, BOT_BAIT_RADIUS, (s) => {
-      if (s.hp <= 0) return;
+      if (s.hp <= 0 || counted.has(s.id)) return;
       const dx = s.position.x - bx, dy = s.position.y - by;
       if (dx * dx + dy * dy <= BOT_BAIT_RADIUS * BOT_BAIT_RADIUS) addThreat(s.ownerId, 1);
     });
-    for (const [, g] of state.groups) {
-      if (g.status !== 'attacking' || g.targetId !== base.id) continue;
-      addThreat(g.ownerId, g.memberIds.length);
-    }
 
     // Only count factions that are hostile to EACH OTHER, not merely to us.
     // In team mode two attackers from the same team will not oblige by
@@ -214,7 +248,9 @@ export class AISystem {
       }
     }
     const totalIncoming = factions.reduce((t, [, n]) => t + n, 0);
-    const biggestFaction = factions.reduce((m, [, n]) => Math.max(m, n), 0);
+    const sizes = factions.map(([, n]) => n).sort((a, b) => b - a);
+    const biggestFaction = sizes[0] ?? 0;
+    const secondFaction  = sizes[1] ?? 0;
 
     return {
       pressing,
@@ -229,6 +265,7 @@ export class AISystem {
       rivalFactions,
       totalIncoming,
       biggestFaction,
+      secondFaction,
     };
   }
 
@@ -316,6 +353,32 @@ export class AISystem {
     if (view.rivalFactions < 2) return false;
 
     const base = player.base;
+
+    /*
+     * HYSTERESIS. This is the fix that matters most here.
+     *
+     * player._baiting was written by _withdraw and read by nothing at all, so
+     * the decision was retaken from scratch every AI tick. As the threat
+     * estimate wobbled across the threshold, squads oscillated — walk away,
+     * come home, walk away — spending the fight in transit, neither massed on
+     * the base nor clear of the collision. Measured over 24 matches, a bot
+     * that baited finished with FEWER soldiers than one that never did.
+     *
+     * Once committed, stay committed until the thing being waited for has
+     * happened: the rivals have collided (so there are no longer two), or the
+     * base can no longer take the beating.
+     */
+    if (player._baiting) {
+      if (view.rivalFactions >= 2 && (base.hp / base.maxHp) > BOT_BAIT_MIN_HP) return true;
+      player._baiting = false;
+      return false;
+    }
+
+    // The two armies must be able to genuinely hurt each other. Stepping
+    // aside for one real army plus a token squad buys nothing — they do not
+    // maul each other — and it gives up the base ring, which makes the base
+    // undamageable while it holds.
+    if (view.secondFaction < view.biggestFaction * BOT_BAIT_PARITY) return false;
     const mine = view.available;
 
     // Would standing lose? Defenders are worth DEFENDER_EDGE attackers each.
