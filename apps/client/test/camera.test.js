@@ -124,7 +124,12 @@ test('a live match opens ZOOMED IN, not fitted to the whole map', () => {
     const cam = { x: 1400, y: 1400, zoom: 0, width: w, height: h };
     new CameraController(cam).fit(FIT_PLAY);
 
-    assert.ok(cam.zoom > fitZoom(w, h, FIT_PLAY) * 1.5,
+    // 1.2, not a copy of PLAY_ZOOM_MULT. The property under test is "a play
+    // zoom was actually applied", and the regression it guards against is the
+    // multiplier silently going to 1.0. Pinning it to the current tuning meant
+    // the test failed the moment the framing was adjusted — which is exactly
+    // when you want it to keep holding still and check the invariant.
+    assert.ok(cam.zoom > fitZoom(w, h, FIT_PLAY) * 1.2,
       `${w}x${h} opened at ${cam.zoom}, barely above the fit floor`);
     assert.ok(cam.zoom <= zoomMax(w, h) + 1e-9, `${w}x${h} exceeded zoomMax`);
 

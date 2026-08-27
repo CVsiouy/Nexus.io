@@ -369,6 +369,60 @@
       max-width: 260px;
     }
 
+    /* ─── First-match walkthrough ─────────────────────────────────────────
+     *
+     * Top-centre, under the status strip. That band is the only large area of
+     * screen with nothing in it in either orientation: the corner clusters end
+     * around y=60 and the action circles start around y=317 on an 852x393
+     * landscape phone. Notifications already claim the right-middle, and the
+     * bottom belongs to the joystick, build strip and action circles.
+     *
+     * Semi-transparent like every other panel, for the same reason: the map is
+     * the game, and a tutorial that hides the thing it is teaching about is
+     * self-defeating.
+     */
+    #firstrun {
+      position: absolute; left: 50%; transform: translateX(-50%);
+      top: calc(var(--gut-t) + 46px);
+      z-index: 25;
+      display: none;
+      width: min(430px, 66vw);
+      padding: 8px 12px 9px;
+      border-radius: 12px;
+      background: rgba(255,255,255,0.84);
+      backdrop-filter: blur(8px);
+      box-shadow: 0 4px 18px rgba(0,0,0,0.14);
+      font-family: 'Rajdhani', sans-serif;
+      pointer-events: auto;      /* Skip has to be tappable */
+    }
+    #firstrun.vis { display: block; }
+    .fr-head {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 3px;
+    }
+    .fr-title {
+      font-size: 10px; font-weight: 700; letter-spacing: 2px; color: #94a3b8;
+      text-transform: uppercase;
+    }
+    #fr-skip {
+      border: 0; background: none; cursor: pointer;
+      color: #94a3b8; font-family: 'Rajdhani', sans-serif;
+      font-size: 11px; font-weight: 700; letter-spacing: 1px;
+      /* A real 44px target even though it looks like a text link — a player who
+         wants this gone should not have to aim. */
+      min-width: 44px; min-height: 32px;
+    }
+    #fr-skip:hover { color: #0077cc; }
+    #fr-text {
+      font-size: 13px; line-height: 1.45; color: #33566f; font-weight: 600;
+    }
+    #fr-text b { color: #1a2a40; font-weight: 700; }
+    .fr-dots { display: flex; gap: 4px; margin-top: 7px; }
+    .fr-dot {
+      height: 3px; flex: 1; border-radius: 2px; background: #dde5ed;
+    }
+    .fr-dot.on { background: #0077cc; }
+
     /* ─── Build panel (bottom-center) ─── */
     #build-panel {
       position: absolute; bottom: 14px; left: 50%;
@@ -1226,32 +1280,53 @@
       will-change: transform;
     }
 
-    /* ── Rotate hint ────────────────────────────────────────────────────── */
-    #rotate-hint {
-      display: none;                       /* base state: never shown */
-      position: absolute; left: 50%; transform: translateX(-50%);
-      bottom: calc(var(--gut-b) + var(--dock-h) + var(--rail-h) + var(--strip-h) + 12px);
-      z-index: 30;
-      align-items: center; gap: 8px;
-      padding: 0 6px 0 14px; min-height: 44px;
-      border-radius: 22px;
-      background: rgba(26,42,64,0.9); color: #fff;
-      font-family: 'Rajdhani', sans-serif; font-size: 13px;
-      font-weight: 700; letter-spacing: 1px;
-      box-shadow: 0 4px 18px rgba(0,0,0,0.25);
-      pointer-events: none;                /* the pill never eats a map tap */
-      animation: rhFade 9s ease forwards;  /* auto-dismiss, no JS timer */
+    /* ── Landscape gate ──────────────────────────────────────────────────
+     *
+     * The game is landscape-only, and this is a wall rather than a nudge.
+     *
+     * It used to be exactly a nudge: #rotate-hint, a pill with a ✕ that faded
+     * itself after nine seconds. The effect was that a player could wave it
+     * away and carry on in the worst layout the game has — which is the one
+     * thing a rotate prompt exists to prevent. diep.io and florr.io both block
+     * outright. Supporting portrait badly is worse than not supporting it.
+     *
+     * Shown by ONE rule, nested inside (orientation: portrait), so rotating
+     * clears it in the same layout pass with no JS in the path at all.
+     * `pointer: coarse` is what stops a narrow desktop window tripping it.
+     */
+    #rotate-gate {
+      display: none;                       /* base state on every device */
+      position: fixed; inset: 0; z-index: 200;
+      flex-direction: column;
+      align-items: center; justify-content: center;
+      gap: 16px; padding: 24px;
+      background: #1a2a40; color: #fff;
+      text-align: center;
+      font-family: 'Rajdhani', sans-serif;
+      /* It sits over the play surface, so it must also swallow gestures.
+         Without this a drag lands on the canvas underneath and pans a camera
+         nobody can see, so the player rotates back into a moved view. */
+      touch-action: none;
+      user-select: none; -webkit-user-select: none;
     }
-    #rotate-hint.dismissed { display: none !important; }
-    #rotate-hint .rh-icon { font-size: 17px; animation: rhSpin 2.4s ease-in-out infinite; }
-    #rotate-hint > button {
-      pointer-events: auto;                /* …but the ✕ does */
-      min-width: 44px; min-height: 44px;
-      background: none; border: 0; color: rgba(255,255,255,0.75);
-      font-size: 15px; cursor: pointer;
+    #rotate-gate .rg-icon {
+      font-size: 60px; line-height: 1;
+      animation: rgSpin 2.4s ease-in-out infinite;
     }
-    @keyframes rhFade { 0%,4% {opacity:0} 10%,80% {opacity:1} 100% {opacity:0; visibility:hidden} }
-    @keyframes rhSpin { 0%,60%,100% {transform:rotate(0)} 80% {transform:rotate(-90deg)} }
+    #rotate-gate .rg-text {
+      font-size: 22px; font-weight: 700; letter-spacing: 1px;
+      line-height: 1.3; max-width: 14ch;
+    }
+    #rotate-gate .rg-sub {
+      font-size: 13px; font-weight: 600; letter-spacing: .5px;
+      color: rgba(255,255,255,0.55);
+    }
+    @keyframes rgSpin { 0%,60%,100% {transform:rotate(0)} 80% {transform:rotate(-90deg)} }
+
+    /* The one and only rule that shows it. */
+    @media (pointer: coarse) and (orientation: portrait) {
+      #rotate-gate { display: flex; }
+    }
 
 
     /* ═══ T1 — any coarse pointer. Sizing and gesture hygiene only. ═══════ */
@@ -1553,114 +1628,6 @@
       #level-bar { display: none; }
     }
 
-    /* ═══ T3 — portrait phone ════════════════════════════════════════════
-       Width is the scarce axis and height is abundant, so everything that was
-       a vertical rail in landscape becomes a horizontal band here, stacked up
-       from the bottom. The thumb zone is the bottom third of the screen. */
-    @media (pointer: coarse) and (orientation: portrait) and (max-width: 520px) {
-      #hud { --dock-h: 0px; --rail-h: 58px; }
-
-      /* Actions: still circles, still bottom-right, above the squad rail. */
-      #cmd-bar {
-        top: auto; bottom: calc(var(--gut-b) + var(--rail-h) + 8px);
-        right: var(--gut-r); left: auto; transform: none;
-        flex-direction: row; align-items: flex-end; gap: 10px;
-        background: none; border: none; box-shadow: none; backdrop-filter: none;
-        padding: 0;
-      }
-      .cmd-btn {
-        width: 58px; height: 58px; min-width: 0; min-height: 0;
-        border-radius: 50%; justify-content: center; padding: 0; gap: 0;
-        background: var(--btn-bg-strong);
-        border: 1.5px solid rgba(0,0,0,0.10);
-        box-shadow: 0 3px 14px rgba(0,0,0,0.18);
-        backdrop-filter: blur(6px);
-      }
-      .cmd-btn .c-icon { font-size: 24px; margin: 0; }
-      .cmd-btn .c-name, .cmd-btn .c-key { display: none; }
-      #cmd-defend { width: 70px; height: 70px; }
-      #cmd-defend .c-icon { font-size: 30px; }
-
-      /* Stick bottom-left, mirroring the actions. */
-      #joystick {
-        left: var(--gut-l);
-        bottom: calc(var(--gut-b) + var(--rail-h) + 8px);
-        width: 104px; height: 104px;
-      }
-
-      /* Squads: a horizontal strip along the very bottom. A 56px vertical rail
-         would cost 14% of a 393px width; 58px of height costs 7% of 852px. */
-      #group-panel {
-        top: auto; left: var(--gut-l); right: var(--gut-r); width: auto;
-        bottom: var(--gut-b);
-        height: var(--rail-h); max-height: none; padding: 4px;
-        overflow-x: auto; overflow-y: hidden;
-        touch-action: pan-x;
-        scroll-snap-type: x proximity;
-      }
-      #group-panel .gp-title { display: none; }
-      #group-list { flex-direction: row; gap: 5px; }
-      .group-entry { flex: 0 0 auto; min-width: 50px; scroll-snap-align: start; }
-      .group-entry .g-count { font-size: 22px; }
-      .group-entry .g-status { font-size: 7px; }
-
-      /* Corner buttons, stacked down the right below the status strip — at
-         393px wide there is no room for a centred clock and a corner button on
-         the same row. */
-      #skill-panel.collapsed, #leaderboard.collapsed, #minimap-wrap.collapsed {
-        width: 44px; height: 44px; padding: 0 !important;
-        display: flex; align-items: center; justify-content: center;
-      }
-      #skill-panel.collapsed .handle-title,
-      #leaderboard.collapsed .handle-title,
-      #minimap-wrap.collapsed .handle-title { display: none; }
-      #skill-panel.collapsed .panel-handle,
-      #leaderboard.collapsed .panel-handle,
-      #minimap-wrap.collapsed .panel-handle { justify-content: center; gap: 0; }
-
-      #minimap-wrap:not(.collapsed) { padding: 6px; }
-      #minimap-wrap canvas { width: 132px; height: 132px; }
-      #minimap-close { display: block; }
-
-      #leaderboard:not(.collapsed) { min-width: 160px; max-height: 50dvh; overflow-y: auto; }
-      #skill-panel { top: var(--gut-t); left: var(--gut-l); min-width: 0; }
-      #skill-panel:not(.collapsed) { max-width: 190px; }
-
-      /* Build opens as a bottom sheet — a horizontal scroller is wrong at
-         393px wide, a wrapping grid is not. */
-      /* Clear of the joystick, which is 104px tall sitting 8px above the squad
-         rail — so anything below rail+112 would sit on top of it. */
-      #build-panel {
-        left: var(--gut-l); right: var(--gut-r); transform: none;
-        bottom: calc(var(--gut-b) + var(--rail-h) + 124px);
-        flex-wrap: wrap; justify-content: center;
-        padding: 5px 6px;
-      }
-      #build-panel .bp-section-lbl { display: none; }
-      .unit-btn, .econ-btn { min-width: 62px; }
-
-      /* Same reasoning as landscape — see the note in T2. Portrait is narrow,
-         so the cap is a share of the width rather than a fixed box. */
-      #notifs {
-        left: auto; right: var(--gut-r);
-        top: 50%; bottom: auto;
-        transform: translateY(-50%);
-        align-items: flex-end;
-        max-width: 62vw;
-      }
-      #notifs .notif:nth-child(n+3) { display: none; }
-      .notif { white-space: normal; font-size: 10px; }
-
-      #level-bar { display: none; }
-
-      /* The ONLY rule that shows the hint lives inside (orientation: portrait),
-         so rotating makes it revert to display:none in the same layout pass.
-         That is a stronger guarantee than any JS could give. */
-      #rotate-hint:not(.dismissed) {
-        display: flex;
-        bottom: calc(var(--gut-b) + var(--rail-h) + 196px);
-      }
-    }
 
 
     /* ═══ Phone: lighter still, and tighter ══════════════════════════════
@@ -1740,16 +1707,6 @@
       #build-panel .bp-rate { font-size: 9px; }
     }
 
-    /* Portrait: the corner cluster drops BELOW the status strip.
-       Width is the scarce axis here, and a centred clock plus two 44px buttons
-       does not fit across 375px — at 393px they cleared by half a pixel, which
-       is not clearance, it is luck. */
-    @media (pointer: coarse) and (orientation: portrait) and (max-width: 560px) {
-      #leaderboard, #minimap-wrap,
-      #leaderboard:not(.collapsed), #minimap-wrap:not(.collapsed) {
-        top: calc(var(--gut-t) + 46px);
-      }
-    }
     /* ═══ T4 — very small. Shed rather than shrink. ══════════════════════ */
     @media (pointer: coarse) and (orientation: landscape) and (max-height: 380px) {
       #hud { --rail-w: 48px; }
@@ -1764,15 +1721,8 @@
       #minimap-wrap canvas { width: 124px; height: 124px; }
       .group-entry .g-count { font-size: 19px; }
     }
-    @media (pointer: coarse) and (orientation: portrait) and (max-width: 360px) {
-      #match-ping { display: none; }
-      #notifs .notif:nth-child(n+2) { display: none; }
-      .cmd-btn { width: 52px; height: 52px; }
-      #cmd-defend { width: 62px; height: 62px; }
-      #joystick { width: 92px; height: 92px; }
-    }
     @media (prefers-reduced-motion: reduce) {
-      #rotate-hint, #rotate-hint .rh-icon { animation: none; }
+      #rotate-gate .rg-icon { animation: none; }
     }
     /* Graphics quality selector in the menu. */
     .quality-row {
@@ -1999,6 +1949,19 @@
       <div id="spectate-tag">SPECTATING</div>
     </div>
 
+    <!--
+      First-match walkthrough. Populated entirely by firstRun.js; empty here so
+      there is no half-written step visible for a frame before the first render.
+    -->
+    <div id="firstrun" aria-live="polite">
+      <div class="fr-head">
+        <span class="fr-title">Tutorial</span>
+        <button id="fr-skip" type="button">SKIP</button>
+      </div>
+      <div id="fr-text"></div>
+      <div class="fr-dots" id="fr-dots"></div>
+    </div>
+
     <!-- Shown after your base falls: you keep watching instead of being ejected. -->
     <div id="spectate-banner">
       <span class="sp-title">💀 ELIMINATED</span>
@@ -2133,22 +2096,25 @@
       <div class="js-ring"></div>
       <div class="js-knob"></div>
     </div>
-
-    <!--
-      Portrait nudge.
-
-      Copy note: NOT "more map area". Zoom fits the longer viewport axis and the
-      world is square, so portrait and landscape show the same amount of map.
-      Landscape's real advantage is HUD room and two-thumb reach, so that is
-      what this claims. Shown purely by a media query nested inside
-      (orientation: portrait) — see the CSS — so it cannot survive a rotation.
-    -->
-    <div id="rotate-hint" role="status">
-      <span class="rh-icon" aria-hidden="true">⟳</span>
-      <span class="rh-text">Rotate for the full controls</span>
-      <button id="rotate-hint-x" aria-label="Dismiss">✕</button>
-    </div>
   </div><!-- /#hud -->
+
+  <!--
+    Landscape gate.
+
+    Lives OUTSIDE #hud deliberately. It has to cover the MENU as well as the
+    match, and #hud is pointer-events:none with its own stacking context — a
+    fixed overlay nested inside it would neither swallow taps nor sit above
+    #intro. At body level it is unambiguously on top of both.
+
+    Copy note: it states a requirement rather than selling a benefit. The pill
+    this replaces read "Rotate for the full controls", which invited the reply
+    "…or don't", and plenty of players took it.
+  -->
+  <div id="rotate-gate" role="alertdialog" aria-label="Rotate your device">
+    <span class="rg-icon" aria-hidden="true">⟳</span>
+    <span class="rg-text">Please turn device to landscape mode</span>
+    <span class="rg-sub">BASEWAR.IO is played in landscape</span>
+  </div>
 
   <!-- ─── Menu ─────────────────────────────────────────────────────────────
        A real match runs behind this the whole time you are reading it. The

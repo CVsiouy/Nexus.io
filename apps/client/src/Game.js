@@ -48,6 +48,7 @@ import { readQuality, qualityOpts } from './quality.js';
 import { GameRenderer } from './renderer/GameRenderer.js';
 import { HUDRenderer } from './renderer/HUDRenderer.js';
 import { Tips } from './tips.js';
+import { FirstRun } from './firstRun.js';
 
 /**
  * Game — the client.
@@ -145,6 +146,7 @@ export class Game {
     this._hud = new HUDRenderer();
     // Contextual coaching. Advisory only — it never sends a command.
     this._tips = new Tips((msg, kind) => this.showNotice(msg, kind));
+    this._firstRun = new FirstRun();
 
     this._input = new InputSystem(
       this._app, this._camera, this._world, this._selection,
@@ -189,17 +191,34 @@ export class Game {
     const applyResize = () => {
       resizeQueued = false;
 
-      // An on-screen keyboard shrinks the visual viewport dramatically. Treat
-      // that as "a text field is open", not as a real layout change — resizing
-      // the canvas to the keyboard-reduced height and back is both expensive
-      // and visibly ugly.
+      // An on-screen keyboard shrinks the visual viewport dramatically, and
+      // resizing the canvas down to the keyboard-reduced height and back is
+      // both expensive and visibly ugly. So skip those resizes — but ONLY
+      // those.
       //
-      // This check deliberately still measures against window.innerHeight, the
-      // LAYOUT viewport, because that is the thing a keyboard does not move —
-      // it is the fixed baseline the shrunken visual viewport is compared to.
-      // Only the resize itself uses viewportSize().
+      // This used to test the shrink ratio alone:
+      //
+      //     if (vv && vv.height < window.innerHeight * 0.75) return;
+      //
+      // Browser chrome shrinks the visual viewport too, and on a landscape
+      // phone it routinely eats more than a quarter of the layout viewport: a
+      // 393px-tall viewport under a ~100px toolbar measures 0.745, just under
+      // the threshold. Every resize was then skipped for the rest of the
+      // session, the canvas kept whatever size it had, and a strip of dead
+      // space sat along the bottom of the map — the "footer" that was reported
+      // twice and survived one fix already.
+      //
+      // It cannot reproduce in device emulation, which draws no browser chrome
+      // and therefore always measures a ratio of 1.0. That is why it kept
+      // coming back.
+      //
+      // A keyboard can only be open if something is focused to receive it, so
+      // that is what we test now, with the ratio kept as a secondary condition.
+      // isTypingInto is reused rather than reimplemented so there is one
+      // definition of "is this a text field" in the client.
       const vv = window.visualViewport;
-      if (vv && vv.height < window.innerHeight * 0.75) return;
+      if (isTypingInto({ target: document.activeElement })
+          && vv && vv.height < window.innerHeight * 0.75) return;
 
       const { w, h } = viewportSize();
       this._app.renderer.resize(w, h);
@@ -214,6 +233,11 @@ export class Game {
 
     window.addEventListener('resize', queueResize);
     window.visualViewport?.addEventListener('resize', queueResize);
+    // Entering or leaving fullscreen changes the drawable area. A plain resize
+    // event does fire for it, but not reliably after the new dimensions are
+    // readable — this is a second, later chance. queueResize already coalesces
+    // into one rAF so the duplicate costs nothing.
+    document.addEventListener('fullscreenchange', queueResize);
   }
 
   // ── Sending orders ─────────────────────────────────────────────────────────
@@ -564,7 +588,10 @@ export class Game {
     this._renderer.render(world, this._camera, this._selection, this._input.pendingOrders, this._pings);
     // Teach in context, but never while spectating or in the menu demo.
     if (this._running && !this._attract && !this._spectating) {
-      this._tips?.update(world, performance.now());
+      this._firstRun?.update(world);
+      // The walkthrough owns match one; contextual tips take over once it is
+      // finished, so a new player is never handed two things to read at once.
+      if (!this._firstRun?.active) this._tips?.update(world, performance.now());
     }
 
     this._hud.update(world, this._selection, {
@@ -644,6 +671,17 @@ export class Game {
           if (ev.data.ownerId === this._world.playerId) this._showSpecModal();
           break;
 
+        case 'playerEliminated':
+          // Eight players share one stream, so only my own death is mine to
+          // report. Recorded here rather than derived later because the
+          // killer is knowable only at the moment of the kill — a minute on,
+          // whoever did it may themselves be dead.
+          if (ev.data.ownerId === this._world.playerId) {
+            this._killedBy = this._nameOf(ev.data.killerId);
+            this._showEliminatedBy();
+          }
+          break;
+
         case 'ping': {
           // In team mode a ping is only for your own side — otherwise you'd be
           // telling your enemies exactly where you plan to attack.
@@ -666,6 +704,40 @@ export class Game {
           break;
       }
     }
+  }
+
+  /**
+   * Resolve an owner id to something worth showing a player.
+   *
+   * `killerId` is genuinely nullable — CombatSystem emits `killer?.id ?? null`,
+   * which is what arrives when a base falls with no surviving attacker to
+   * credit. Returning null rather than a placeholder keeps that case
+   * distinguishable, so the copy can say "your base fell" instead of naming
+   * nobody in particular.
+   */
+  _nameOf(id) {
+    if (!id) return null;
+    const p = this._world.players.get(id);
+    // Bots carry no display name, only an id like `bot_2`. Format it exactly
+    // as the simulation formats it in its own notifications, so a player never
+    // sees the same opponent called two different things.
+    return p?.name || id.replace('bot_', 'Bot ');
+  }
+
+  /**
+   * Say who killed you, in the banner that appears the moment you die.
+   *
+   * Safe to call before or after the banner is shown: the elimination event and
+   * the state change that triggers spectating arrive in the same tick with no
+   * guaranteed order, so both paths call this and whichever runs second simply
+   * rewrites the same text.
+   */
+  _showEliminatedBy() {
+    const el = document.querySelector('#spectate-banner .sp-sub');
+    if (!el) return;
+    el.textContent = this._killedBy
+      ? `Killed by ${this._killedBy} — the match continues`
+      : 'Your base fell — the match continues';
   }
 
   _showSpecModal() {
@@ -809,6 +881,12 @@ export class Game {
     const fbComment = document.getElementById('fb-comment');
     if (fbComment) fbComment.value = '';
     this._eliminatedAt = null;
+    this._killedBy     = null;
+
+    // Re-arm both teaching surfaces for the new match. Tips was never reset
+    // here, so in a second match within one session it stayed silent.
+    this._firstRun?.reset();
+    this._tips?.reset();
 
     // A brand-new world and selection — stale entity ids from the last match
     // must never leak into the next one.
@@ -869,6 +947,9 @@ export class Game {
     this._selection.clear();
     document.getElementById('spectate-banner')?.classList.add('vis');
     document.getElementById('spectate-tag')?.classList.add('vis');
+    this._showEliminatedBy();   // the event may have landed before or after this
+    // Dying mid-walkthrough ends it: the remaining steps assume a live base.
+    this._firstRun?.finish();
   }
 
   _checkGameOver() {
@@ -909,7 +990,9 @@ export class Game {
     } else {
       goTitle.textContent = 'ELIMINATED';
       goTitle.className = 'lose';
-      goSub.textContent = 'Your mother base was destroyed. Better luck next time.';
+      goSub.textContent = this._killedBy
+        ? `${this._killedBy} destroyed your mother base. Better luck next time.`
+        : 'Your mother base was destroyed. Better luck next time.';
     }
     document.getElementById('gameover').classList.add('vis');
   }

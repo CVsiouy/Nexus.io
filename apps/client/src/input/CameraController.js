@@ -47,8 +47,10 @@ export const FIT_ATTRACT = 1.7;    // menu demo, deliberately zoomed in
  * match view should be a window onto the battlefield you move around, not a
  * wall map you read.
  *
- * At 1.8 a landscape viewport shows roughly 57% of the world across, which
- * leaves real room to move in both axes.
+ * At 1.5 a landscape viewport shows roughly 68% of the world across, which
+ * leaves real room to move in both axes. It sat at 1.8 until side-by-side
+ * phone play against diep.io showed that framing noticeably tighter than the
+ * genre expects; 1.5 is the wider view.
  *
  * This used to apply on touch only, and desktop sat at the bare fit — hence the
  * complaint that the map was "too zoomed out" with only vertical panning. One
@@ -57,7 +59,7 @@ export const FIT_ATTRACT = 1.7;    // menu demo, deliberately zoomed in
  * at all. Finger-versus-mouse precision is handled where it belongs, by
  * MIN_TOUCH_PX in hitTest.js, which is zoom-independent.
  */
-export const PLAY_ZOOM_MULT = 1.8;
+export const PLAY_ZOOM_MULT = 1.5;
 
 /**
  * How far past the world edge the camera may travel, as a fraction of the

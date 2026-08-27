@@ -68,22 +68,36 @@ function initCollapsiblePanels() {
   });
 }
 
-
 /**
- * The portrait rotate hint auto-dismisses via a CSS animation; this only adds
- * the "and don't show it again" half.
+ * Get as close to a native app as the browser allows. Called from the PLAY tap.
+ *
+ * Both calls below require a user gesture, and a PLAY tap is one. Neither can
+ * be done at load time; attempting it just fills the console with
+ * NotAllowedError and changes nothing.
+ *
+ * Both are wrapped because both legitimately reject, and neither is permitted
+ * to stop a match from starting:
+ *
+ *   • requestFullscreen — iOS Safari implements the Fullscreen API for <video>
+ *     only, so on an iPhone this always rejects and the browser bar stays put.
+ *     The game has to be correct in that case regardless, which is why the
+ *     canvas is still sized from the 100dvh on #app rather than from any
+ *     assumption that we own the whole screen.
+ *   • orientation.lock — requires fullscreen first on Android, and does not
+ *     exist at all on iOS. Where it works the player never sees the landscape
+ *     gate; where it does not, the gate is the fallback.
+ *
+ * Deliberately not awaited by the caller: a match should start the instant it
+ * is asked to, not after a permission round-trip.
  */
-function initRotateHint() {
-  const hint = document.getElementById('rotate-hint');
-  if (!hint) return;
+async function goImmersive() {
   try {
-    if (localStorage.getItem('basewar.rotateHint') === 'off') hint.classList.add('dismissed');
-  } catch { /* private browsing — the hint simply reappears */ }
+    await document.documentElement.requestFullscreen({ navigationUI: 'hide' });
+  } catch { /* iOS, or the player declined — play windowed */ }
 
-  document.getElementById('rotate-hint-x')?.addEventListener('click', () => {
-    hint.classList.add('dismissed');
-    try { localStorage.setItem('basewar.rotateHint', 'off'); } catch { /* ignore */ }
-  });
+  try {
+    await screen.orientation?.lock?.('landscape');
+  } catch { /* unsupported here — #rotate-gate is the fallback */ }
 }
 
 /**
@@ -131,7 +145,6 @@ async function main() {
 
   initCollapsiblePanels();
   initTutorial();
-  initRotateHint();
   initQualityToggle(game);
 
   // Start a real match playing behind the menu straight away. It runs entirely
@@ -151,12 +164,14 @@ async function main() {
 
   /** Practice: the whole game runs inside this browser. Costs the server nothing. */
   const practice = (mode) => {
+    goImmersive();          // must be called from inside the tap, not after it
     hideIntro();
     game.startMatch(mode, { online: false });
   };
 
   /** Online: the game runs on the server; this browser just draws it. */
   const online = async (mode) => {
+    goImmersive();          // fire before the first await, while the tap still counts as user activation
     const input = document.getElementById('player-name');
     const name  = (input?.value || '').trim() || 'Player';
 
