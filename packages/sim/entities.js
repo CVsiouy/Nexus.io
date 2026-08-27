@@ -1,6 +1,6 @@
 import {
   BASE_HP, SPAWN_PROTECT, SOLDIER_DEFS, TURRET_DEFS,
-  STARTING_GOLD, EATABLE_DEFS, BOSS_HP,
+  STARTING_GOLD, STARTING_GARRISON, EATABLE_DEFS, BOSS_HP,
   WILDLING_HP, WILDLING_DAMAGE, WILDLING_SPEED,
 } from './constants.js';
 
@@ -48,7 +48,7 @@ export class Base {
     this.wallBuildTimer    = 0;
 
     // Garrison: soldiers held inside the base (count), released together as a squad.
-    this.garrison          = 0;
+    this.garrison          = STARTING_GARRISON;
 
     // Turret build queue (dormant — turrets disabled for now). Shape: [{ type }].
     this.turretQueue     = [];

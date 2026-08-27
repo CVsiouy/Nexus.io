@@ -145,19 +145,39 @@ export class Tips {
       if (n > 0 && (smallest === 0 || n < smallest)) smallest = n;
     }
 
-    // Anything hostile within a generous radius of home, grouped by owner, so
-    // "two DIFFERENT enemies" can be told from "one enemy with two squads".
+    // Is anything hostile close to home? Proximity is the right question for
+    // this one — `garrison-trickle` warns about sending a half-squad out while
+    // enemies are about, and a squad merely passing by is still a threat to it.
     const bx = base.position.x, by = base.position.y;
     const R2 = 700 * 700;
-    const factions = new Set();
     let enemyNear = false;
     for (const [, s] of world.soldiers) {
       if (s.hp <= 0 || s.ownerId === world.playerId || s.ownerId === 'boss') continue;
       const dx = s.position.x - bx, dy = s.position.y - by;
       if (dx * dx + dy * dy > R2) continue;
       enemyNear = true;
-      if (world.areEnemies(world.playerId, s.ownerId)) factions.add(s.ownerId);
+      break;                    // one is enough; nothing here needs a count
     }
+
+    // Which enemies are actually COMING FOR US — a different, much stricter
+    // question than the one above, and it used to be answered with the same
+    // proximity test. In FFA everyone is hostile to everyone, so two unrelated
+    // squads passing near your base both counted as "factions", and the tip
+    // announced that two enemies were "heading for you" when neither was.
+    // That false alarm is what was reported.
+    //
+    // Groups are serialised with `status` and `targetId`, so the real question
+    // is answerable: a group that is attacking, and whose target belongs to me.
+    const factions = new Set();
+    for (const [, g] of world.groups) {
+      if (g.ownerId === world.playerId || g.ownerId === 'boss') continue;
+      if (g.status !== 'attacking' || g.memberIds.length === 0) continue;
+      if (!world.areEnemies(world.playerId, g.ownerId)) continue;
+      const target = world.resolve(g.targetId);
+      if (!target || target.ownerId !== world.playerId) continue;  // aimed at someone else
+      factions.add(g.ownerId);
+    }
+
     // Only count them as rivals if they are hostile to EACH OTHER too — two
     // teammates will not oblige by fighting.
     const ids = [...factions];

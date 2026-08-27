@@ -2,6 +2,7 @@ import { Game } from './Game.js';
 import { isTypingInto } from './dom.js';
 import { initTutorial } from './tutorial.js';
 import { readQuality, writeQuality } from './quality.js';
+import { tutorialEnabled, setTutorialEnabled } from './firstRun.js';
 
 let game = null;
 
@@ -104,6 +105,19 @@ async function goImmersive() {
  * The quality control in the menu. The preference itself lives in quality.js,
  * because Game needs it at construction time.
  */
+/**
+ * The in-game tutorial switch.
+ *
+ * Default ON: only an explicit "off" is stored, so a first-time visitor gets
+ * the tutorial without having to find a setting first.
+ */
+function initTutorialToggle() {
+  const box = document.getElementById('tutorial-toggle');
+  if (!box) return;
+  box.checked = tutorialEnabled();
+  box.addEventListener('change', () => setTutorialEnabled(box.checked));
+}
+
 function initQualityToggle(game) {
   const sel = document.getElementById('quality-select');
   if (!sel) return;
@@ -146,6 +160,7 @@ async function main() {
   initCollapsiblePanels();
   initTutorial();
   initQualityToggle(game);
+  initTutorialToggle();
 
   // Start a real match playing behind the menu straight away. It runs entirely
   // in this browser, so it costs the server nothing, and it shows a newcomer

@@ -551,6 +551,15 @@ export class Game {
     document.body.classList.add('playing');
     this._input.setEnabled(true);
 
+    // Arm the teaching surfaces for this match.
+    //
+    // These MUST be here and not only in _requeue(). The previous version was
+    // wired solely into _requeue — the Play Again path — which startMatch never
+    // calls, so on a first visit the tutorial was never armed and never
+    // appeared at all. Incognito reproduced it every time.
+    this._firstRun?.reset();
+    this._tips?.reset();
+
     this._startTicker();
     return true;
   }
@@ -588,7 +597,7 @@ export class Game {
     this._renderer.render(world, this._camera, this._selection, this._input.pendingOrders, this._pings);
     // Teach in context, but never while spectating or in the menu demo.
     if (this._running && !this._attract && !this._spectating) {
-      this._firstRun?.update(world);
+      this._firstRun?.update(world, this._camera);
       // The walkthrough owns match one; contextual tips take over once it is
       // finished, so a new player is never handed two things to read at once.
       if (!this._firstRun?.active) this._tips?.update(world, performance.now());
@@ -637,6 +646,17 @@ export class Game {
    * grows without limit and quietly eats memory and layout time.
    */
   showNotice(msg, kind = 'info') {
+    // The tutorial owns the message area while it is running.
+    //
+    // One gate, here, rather than a check at each caller: contextual tips and
+    // simulation notifications both land in #notifs, they look identical to the
+    // walkthrough, and two of them stacked in the same corner read as one
+    // contradictory thing. Gating at the source means the next thing that
+    // learns to post a message is covered without knowing this rule exists.
+    //
+    // Nothing is lost by dropping them: tips re-evaluate every frame, so one
+    // still true when the tutorial ends simply fires then.
+    if (this._firstRun?.active) return;
     if (!msg) return;
     const host = document.getElementById('notifs');
     if (!host) return;

@@ -229,6 +229,18 @@ export const POP_PER_LEVEL  = 8;
 // Garrison: soldiers can be HELD safely inside the base and released together as
 // a full formation (so they aren't picked off one-by-one as they spawn).
 export const GARRISON_MAX   = 15;
+/*
+ * Soldiers every base begins with, already inside.
+ *
+ * The opening was slow: 120 starting gold buys four soldiers, and a squad
+ * cannot leave the base until it has reached 15, so the first minute was spent
+ * watching a queue. Seven in hand means the first release is reachable early
+ * and the first mine upgrade no longer costs the player their whole defence.
+ *
+ * Applies to EVERY base, bots included — the point is a faster match, not a
+ * head start.
+ */
+export const STARTING_GARRISON = 7;
 
 // ─── Groups & formation ────────────────────────────────────────────────────────
 export const FORMATION_SPACING = 22;   // px between soldiers in a wedge/triangle

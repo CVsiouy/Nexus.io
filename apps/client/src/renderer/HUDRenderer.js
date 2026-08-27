@@ -46,6 +46,7 @@ export class HUDRenderer {
     this._mmCtx    = this._mmCanvas.getContext('2d');
     this._mmWrap   = document.getElementById('minimap-wrap');
     this._cmdBase  = document.getElementById('cmd-base'); // blinks red when base attacked
+    this._cmdRelease = document.getElementById('cmd-release'); // pulses green when the garrison is full
 
     this._buildBtns  = [...document.querySelectorAll('#build-panel .unit-btn')];
     this._turretBtns = [...document.querySelectorAll('#build-panel .turret-btn')];
@@ -88,6 +89,7 @@ export class HUDRenderer {
     this._selection = selection;
     this._updateBasePanel(state, player);
     this._updateBaseAlert(state, player);
+    this._updateGarrisonAlert(player);
     this._updateGroupPanel(state, player);
     this._updateLeaderboard(state);
     this._updateMinimap(state, net?.camera);
@@ -139,6 +141,21 @@ export class HUDRenderer {
     this._cmdBase.classList.toggle('under-attack', underAttack);
   }
 
+  /**
+   * Pulse the Release button while the garrison is full.
+   *
+   * GREEN, deliberately, where the base alert is red. Red already means "you
+   * are being hurt" everywhere else in this HUD, and a full garrison is the
+   * opposite — an opportunity that expires if ignored, since soldiers sitting
+   * inside the base are soldiers doing nothing. Reusing the danger colour for
+   * good news would weaken both signals.
+   */
+  _updateGarrisonAlert(player) {
+    if (!this._cmdRelease) return;
+    const full = (player.base.garrison ?? 0) >= GARRISON_MAX;
+    this._cmdRelease.classList.toggle('garrison-full', full);
+  }
+
   // ── Base panel ─────────────────────────────────────────────────────────────
   _updateBasePanel(state, player) {
     const base = player.base;
@@ -166,7 +183,11 @@ export class HUDRenderer {
       if (state.mode === 'mining') {                    // + every captured node's income
         for (const [, n] of state.mineNodes) if (n.ownerId === player.id) rate += n.goldRate;
       }
-      this._goldRate.textContent = `+${Math.round(rate)}/s`;
+      // One decimal, not Math.round. Mine upgrades step by MINE_BONUS_STEP
+      // (0.7), so rounding to whole numbers made upgrades 3, 6 and 10 change
+      // the displayed figure by nothing at all while the real rate rose every
+      // time — measured, not guessed. It read as "the upgrade did nothing".
+      this._goldRate.textContent = `+${rate.toFixed(1)}/s`;
     }
 
     if (base.specialization) {
@@ -235,7 +256,7 @@ export class HUDRenderer {
       if (state.mode === 'mining') {
         for (const [, n] of state.mineNodes) if (n.ownerId === player.id) rate += n.goldRate;
       }
-      this._bpRate.textContent = `+${Math.round(rate)}/s`;
+      this._bpRate.textContent = `+${rate.toFixed(1)}/s`;   // see _goldRate above
     }
 
     // Garrison: how many soldiers are waiting INSIDE the base. They are drawn

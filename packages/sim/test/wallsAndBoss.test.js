@@ -7,6 +7,7 @@ import {
 } from '../walls.js';
 import {
   WORLD_SIZE, BOSS_COUNT, BOSS_FIRST_MS, BOSS_STAGGER_MS, BOSS_GOLD_REWARD,
+  BOSS_GOLD_REWARD_RICH, BOSS_REWARD_RICH_AT,
   BOSS_MAX_SQUADS, BOSS_SQUAD_SIZE, GROUP_MAX_SIZE, WALL_CELL_SIZE,
   BASE_DEFENSE_RADIUS,
 } from '../constants.js';
@@ -369,4 +370,44 @@ test('boss kill credit stays with the killing blow, not the last swing of the ti
   sim.step(TICK_MS);
   assert.equal(sim.state.players.get(a).base.bossBonus, BOSS_GOLD_REWARD);
   assert.equal(sim.state.players.get(b).base.bossBonus, 0, 'the corpse-hitter was paid');
+});
+
+/*
+ * The +2 / +1 boundary, pinned in both directions.
+ *
+ * Reported as unreliable twice. It was, once: `lastAttackerId` was overwritten
+ * by every hit including hits on an already-dead boss, so credit went to
+ * whoever resolved last in the tick (fixed in f85f750). The taper itself was
+ * always correct, and this test exists so nobody has to take that on trust
+ * again — measured across the boundary rather than read off the source.
+ *
+ * The exact-6.00 case is the one worth having: BOSS_REWARD_RICH_AT is a `>=`
+ * comparison, so landing exactly on it must give the REDUCED reward. An
+ * accidental `>` would pass every other case here and fail only that one.
+ */
+test('the boss reward tapers at exactly BOSS_REWARD_RICH_AT, not near it', () => {
+  for (const target of [3.2, 5.99, 6.0, 6.01, 9.0]) {
+    const sim = new Simulation({ mode: 'ffa', logger: quiet });
+    run(sim, (BOSS_FIRST_MS / 1000) + 5);
+
+    const boss = [...sim.state.bosses.values()][0];
+    assert.ok(boss, 'no boss spawned to kill');
+    const killer = sim.state.players.get('p0');
+
+    // Solve for the miningBonus that puts goldRate exactly on `target`,
+    // whatever level and multipliers the run happened to produce.
+    const mult = killer.base.goldMult ?? 1;
+    const withoutMining = goldRate(killer.base) - (killer.base.miningBonus ?? 0) * mult;
+    killer.base.miningBonus = (target - withoutMining) / mult;
+    killer.base.bossBonus = 0;
+
+    const before = goldRate(killer.base);
+    boss.hp = 0;
+    boss.lastAttackerId = 'p0';
+    sim.step(TICK_MS);
+
+    const expected = before >= BOSS_REWARD_RICH_AT ? BOSS_GOLD_REWARD_RICH : BOSS_GOLD_REWARD;
+    assert.equal(killer.base.bossBonus, expected,
+      `at ${before.toFixed(2)} gold/sec the reward should be ${expected}`);
+  }
 });

@@ -369,59 +369,72 @@
       max-width: 260px;
     }
 
-    /* ─── First-match walkthrough ─────────────────────────────────────────
+    /* ─── In-match tutorial ───────────────────────────────────────────────
      *
-     * Top-centre, under the status strip. That band is the only large area of
-     * screen with nothing in it in either orientation: the corner clusters end
-     * around y=60 and the action circles start around y=317 on an 852x393
-     * landscape phone. Notifications already claim the right-middle, and the
-     * bottom belongs to the joystick, build strip and action circles.
+     * Anchored exactly where messages are anchored — bottom-left on desktop,
+     * and the right-middle band on phones (see the phone tier, which moves both
+     * together). As far as the player is concerned this IS a message; putting
+     * the two teaching surfaces in two different corners would read as two
+     * unrelated systems.
      *
-     * Semi-transparent like every other panel, for the same reason: the map is
-     * the game, and a tutorial that hides the thing it is teaching about is
-     * self-defeating.
+     * They never appear together: Game.showNotice drops every message while the
+     * tutorial is active, so sharing the anchor costs nothing.
+     *
+     * `pointer-events: auto` matters — #notifs is deliberately click-through,
+     * but this one has three buttons.
      */
     #firstrun {
-      position: absolute; left: 50%; transform: translateX(-50%);
-      top: calc(var(--gut-t) + 46px);
-      z-index: 25;
+      position: absolute; left: 14px; bottom: 120px;
+      z-index: 26;
       display: none;
-      width: min(430px, 66vw);
-      padding: 8px 12px 9px;
-      border-radius: 12px;
-      background: rgba(255,255,255,0.84);
+      width: min(320px, 78vw);
+      padding: 9px 11px 8px;
+      border-radius: 10px;
+      border-left: 3px solid #0077cc;
+      background: rgba(255,255,255,0.93);
       backdrop-filter: blur(8px);
-      box-shadow: 0 4px 18px rgba(0,0,0,0.14);
+      box-shadow: 0 3px 14px rgba(0,0,0,0.16);
       font-family: 'Rajdhani', sans-serif;
-      pointer-events: auto;      /* Skip has to be tappable */
+      pointer-events: auto;
     }
     #firstrun.vis { display: block; }
+
     .fr-head {
-      display: flex; align-items: center; justify-content: space-between;
-      margin-bottom: 3px;
+      display: flex; align-items: center; gap: 8px;
+      margin-bottom: 4px;
     }
     .fr-title {
-      font-size: 10px; font-weight: 700; letter-spacing: 2px; color: #94a3b8;
-      text-transform: uppercase;
+      font-size: 10px; font-weight: 700; letter-spacing: 2px;
+      color: #0077cc; text-transform: uppercase;
+    }
+    #fr-step {
+      font-size: 10px; font-weight: 700; letter-spacing: 1px; color: #94a3b8;
+      margin-right: auto;              /* pushes SKIP to the far edge */
     }
     #fr-skip {
       border: 0; background: none; cursor: pointer;
       color: #94a3b8; font-family: 'Rajdhani', sans-serif;
-      font-size: 11px; font-weight: 700; letter-spacing: 1px;
-      /* A real 44px target even though it looks like a text link — a player who
-         wants this gone should not have to aim. */
-      min-width: 44px; min-height: 32px;
+      font-size: 10px; font-weight: 700; letter-spacing: 1px;
+      /* Looks like a text link, but a player who wants this gone should not
+         have to aim: a real target, per the 44px HUD standard. */
+      min-width: 44px; min-height: 30px;
     }
-    #fr-skip:hover { color: #0077cc; }
+    #fr-skip:hover { color: #dc2626; }
+
     #fr-text {
-      font-size: 13px; line-height: 1.45; color: #33566f; font-weight: 600;
+      font-size: 12.5px; line-height: 1.45; color: #33566f; font-weight: 600;
     }
     #fr-text b { color: #1a2a40; font-weight: 700; }
-    .fr-dots { display: flex; gap: 4px; margin-top: 7px; }
-    .fr-dot {
-      height: 3px; flex: 1; border-radius: 2px; background: #dde5ed;
+
+    .fr-nav { display: flex; gap: 6px; margin-top: 8px; }
+    .fr-nav button {
+      flex: 1; min-height: 34px; border-radius: 8px; cursor: pointer;
+      border: 1.5px solid #d5dde6; background: #fff; color: #46596b;
+      font-family: 'Rajdhani', sans-serif;
+      font-size: 12px; font-weight: 700; letter-spacing: 1px;
     }
-    .fr-dot.on { background: #0077cc; }
+    #fr-next { background: #0077cc; border-color: #0077cc; color: #fff; }
+    .fr-nav button:disabled { opacity: .35; cursor: default; }
 
     /* ─── Build panel (bottom-center) ─── */
     #build-panel {
@@ -465,15 +478,53 @@
      * invites a tap that does nothing.
      */
     .unit-btn { position: relative; }
+    /*
+     * The cancel control.
+     *
+     * It was 20x20px, in a HUD whose entire touch standard is --tap: 44px and
+     * which converted every other handle to a real 44px button during the
+     * mobile pass. This one was missed, and a 20px target under a fingertip is
+     * a coin toss — reported as "cancel just does not work", tried many times.
+     * The command path was never at fault: the simulation clamps a cancel to
+     * what is actually queued and cannot go negative (verified).
+     *
+     * Two things fix it, and the second is the one that matters:
+     *
+     *   1. a bigger glyph (28px), and
+     *   2. a 44px touch pad, pushed far enough OUT of the parent that it does
+     *      not steal the parent's own taps.
+     *
+     * That second point is the whole design. Centring a 44px pad on the old
+     * position would have blanketed most of a 62px-wide button, so the corner
+     * of SOLDIER would cancel instead of queueing — fatal when the tutorial
+     * asks for fifteen consecutive taps. Offset out to (-10, -18) the pad
+     * reaches only about 26x18px back over the button: clear of the icon and
+     * the label, which are centred. Above it there is only the gold/rate
+     * readout, which is text and not interactive, so overlapping that costs
+     * nothing.
+     */
     .u-cancel {
-      position: absolute; top: -7px; left: -7px; z-index: 3;
-      width: 20px; height: 20px; border-radius: 50%;
+      position: absolute; top: -18px; left: -10px; z-index: 4;
+      width: 28px; height: 28px; border-radius: 50%;
       display: none; align-items: center; justify-content: center;
       padding: 0; line-height: 1;
       border: 1.5px solid #fff; background: #64748b; color: #fff;
-      font-size: 13px; font-weight: 700; cursor: pointer;
-      pointer-events: auto; box-shadow: 0 1px 4px rgba(0,0,0,0.25);
+      font-size: 16px; font-weight: 700; cursor: pointer;
+      pointer-events: auto; box-shadow: 0 1px 4px rgba(0,0,0,0.3);
     }
+    /*
+     * The real touch target. It lives INSIDE .u-cancel, not beside it, so
+     * `display: none` takes the pad away with the glyph — a separately
+     * positioned pad would keep swallowing taps above the build strip on every
+     * button that has nothing queued.
+     */
+    .u-cancel::after {
+      content: ''; position: absolute;
+      top: 50%; left: 50%; transform: translate(-50%, -50%);
+      width: 44px; height: 44px;
+    }
+    /* Shown only when something is actually queued: .active is toggled on
+       `count > 0 && !locked` in _updateBuildPanel. */
     .unit-btn.active .u-cancel { display: flex; }
     .u-cancel:hover { background: #dc2626; }
     .unit-btn {
@@ -874,6 +925,14 @@
     @keyframes baseAlert { 0%,100% { box-shadow: 0 0 0 0 rgba(220,38,38,0.0); border-color:#d5dde6; } 50% { box-shadow: 0 0 0 3px rgba(220,38,38,0.55); border-color:#dc2626; } }
     #cmd-base.under-attack { animation: baseAlert 0.7s ease-in-out infinite; background: #fff2f2; }
     #cmd-base.under-attack .c-name { color: #dc2626; }
+
+    /* Release button pulses green while the garrison is full.
+       Green, not red: red means "you are being hurt" everywhere else in this
+       HUD, and a full garrison is the opposite — an opportunity going to waste
+       while fifteen soldiers sit indoors doing nothing. */
+    @keyframes garrisonReady { 0%,100% { box-shadow: 0 0 0 0 rgba(22,163,74,0.0); border-color:#d5dde6; } 50% { box-shadow: 0 0 0 3px rgba(22,163,74,0.55); border-color:#16a34a; } }
+    #cmd-release.garrison-full { animation: garrisonReady 0.9s ease-in-out infinite; background: #f2fbf5; }
+    #cmd-release.garrison-full .c-name { color: #16a34a; }
 
     /* ─── Specialization Modal ─── */
     /*
@@ -1621,6 +1680,14 @@
       }
       #notifs .notif:nth-child(n+3) { display: none; }
       .notif { white-space: normal; font-size: 10px; }
+      /* The tutorial follows the messages into the same band — it is the same
+         surface to the player, and the two are never on screen together. */
+      #firstrun {
+        left: auto; right: var(--gut-r);
+        top: 50%; bottom: auto;
+        transform: translateY(-50%);
+        width: min(320px, 46vw);
+      }
 
       /* ── Shed the rest ───────────────────────────────────────────────── */
       /* Level/XP is reference, not a live decision — it lives behind the
@@ -1736,6 +1803,13 @@
       border: 2px solid #d5dde6; background: #fff; color: #223; cursor: pointer;
     }
     .quality-row select:focus { outline: none; border-color: #0077cc; }
+    /* A checkbox is 13px by default — far under the 44px touch standard the
+       rest of this HUD holds to, and this one sits on the menu where a
+       mis-tap is most likely to be a new player. */
+    .quality-row input[type="checkbox"] {
+      width: 22px; height: 22px; accent-color: #0077cc; cursor: pointer;
+      margin: 11px;   /* pads the hit box out to 44px without changing the look */
+    }
     /* Touch rows in the controls list appear only where touch exists. */
 
     /* ─── Tutorial overlay ──────────────────────────────────────────────── */
@@ -1948,18 +2022,25 @@
 
       <div id="spectate-tag">SPECTATING</div>
     </div>
-
     <!--
-      First-match walkthrough. Populated entirely by firstRun.js; empty here so
-      there is no half-written step visible for a frame before the first render.
+      In-match tutorial. Populated entirely by firstRun.js — empty here so no
+      half-written step is visible for a frame before the first render.
+
+      It sits where messages sit, and while it is on screen messages are
+      suppressed at Game.showNotice. Same corner, same look: two of them at once
+      would read as one contradictory thing.
     -->
     <div id="firstrun" aria-live="polite">
       <div class="fr-head">
         <span class="fr-title">Tutorial</span>
+        <span id="fr-step">1/9</span>
         <button id="fr-skip" type="button">SKIP</button>
       </div>
       <div id="fr-text"></div>
-      <div class="fr-dots" id="fr-dots"></div>
+      <div class="fr-nav">
+        <button id="fr-prev" type="button">‹ Back</button>
+        <button id="fr-next" type="button">Next ›</button>
+      </div>
     </div>
 
     <!-- Shown after your base falls: you keep watching instead of being ejected. -->
@@ -2149,6 +2230,13 @@
         <option value="full">Full quality</option>
         <option value="reduced">Reduced &middot; smoother on phones</option>
       </select>
+    </div>
+
+    <!-- Tutorial switch. ON unless the player has explicitly turned it off, so
+         a first-time visitor never has to find it. -->
+    <div class="quality-row">
+      <label for="tutorial-toggle">In-game tutorial</label>
+      <input type="checkbox" id="tutorial-toggle" checked>
     </div>
 
     <!-- Three pillars instead of a paragraph. Everything here is checked

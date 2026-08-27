@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Simulation, TICK_MS } from '../Simulation.js';
-import { WORLD_SIZE } from '../constants.js';
+import { WORLD_SIZE, STARTING_GARRISON } from '../constants.js';
 
 /** Silence expected-error logging so test output stays readable. */
 const quiet = { error: () => {}, warn: () => {}, log: () => {} };
@@ -133,7 +133,10 @@ test('a claimed seat is no longer driven by the AI', () => {
   // The AI keeps its seats busy building. A human seat must build NOTHING it
   // wasn't told to — otherwise your base would spend your gold on units you
   // never ordered.
-  assert.ok(aBot.base.soldierQueue.length > 0 || aBot.base.garrison > 0 || sim.state.soldierCount(aBot.id) > 0,
+  // `> STARTING_GARRISON`, not `> 0`: every base now opens with a garrison, so
+  // `garrison > 0` was true at tick zero and the assertion stopped meaning
+  // anything the moment that constant was introduced.
+  assert.ok(aBot.base.soldierQueue.length > 0 || aBot.base.garrison > STARTING_GARRISON || sim.state.soldierCount(aBot.id) > 0,
     'the AI should have been building on its own seats');
   assert.equal(me.base.soldierQueue.length, 0,
     'the AI queued units on a human-controlled seat');
